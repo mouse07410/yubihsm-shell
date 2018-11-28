@@ -3898,23 +3898,36 @@ static yh_rc create_connector(yh_connector **connector, const char *url,
 
   yh_rc rc;
 
+  DBG_INFO("Creating connector");
   if (connector == NULL) {
+    DBG_INFO("connector is NULL");
+    return YHR_INVALID_PARAMETERS;
+  }
+  if (url == NULL) {
+    DBG_INFO("url is NULL");
+    return YHR_INVALID_PARAMETERS;
+  }
+  if (bf == NULL) {
+    DBG_INFO("bf is NULL");
     return YHR_INVALID_PARAMETERS;
   }
 
   *connector = calloc(1, sizeof(yh_connector));
   if (*connector == NULL) {
+    DBG_INFO("calloc() failed");
     return YHR_MEMORY_ERROR;
   }
 
   if (strncmp(url, YH_USB_URL_SCHEME, strlen(YH_USB_URL_SCHEME)) == 0) {
     (*connector)->status_url = strdup(url);
     if ((*connector)->status_url == NULL) {
+	    DBG_INFO("connector->status_url is NULL");
       rc = YHR_MEMORY_ERROR;
       goto cc_failure;
     }
     (*connector)->api_url = strdup(url);
     if ((*connector)->api_url == NULL) {
+	    DBG_INFO("connector->api_url is NULL");
       rc = YHR_MEMORY_ERROR;
       goto cc_failure;
     }
@@ -3922,6 +3935,7 @@ static yh_rc create_connector(yh_connector **connector, const char *url,
     (*connector)->status_url =
       calloc(1, strlen(url) + strlen(STATUS_ENDPOINT) + 1);
     if ((*connector)->status_url == NULL) {
+	    DBG_INFO("connector->status_url is NULL");
       rc = YHR_MEMORY_ERROR;
       goto cc_failure;
     }
@@ -3929,21 +3943,25 @@ static yh_rc create_connector(yh_connector **connector, const char *url,
 
     (*connector)->api_url = calloc(1, strlen(url) + strlen(API_ENDPOINT) + 1);
     if ((*connector)->api_url == NULL) {
+	    DBG_INFO("connector->api_url is NULL");
       rc = YHR_MEMORY_ERROR;
       goto cc_failure;
     }
     sprintf((*connector)->api_url, "%s%s", url, API_ENDPOINT);
   }
 
+  DBG_INFO("Creating *connector->connection");
   (*connector)->connection = bf->backend_create();
   if ((*connector)->connection == NULL) {
+	  DBG_INFO("*connector->connection is NULL");
     rc = YHR_CONNECTION_ERROR;
     goto cc_failure;
   }
 
   (*connector)->backend = backend;
   (*connector)->bf = bf;
-
+  DBG_INFO("Created connector");
+  
   return YHR_SUCCESS;
 
 cc_failure:
@@ -4035,6 +4053,7 @@ yh_rc yh_init_connector(const char *url, yh_connector **connector) {
     return YHR_GENERIC_ERROR;
   }
 
+  DBG_INFO("Loaded a backend");
   return create_connector(connector, url, backend, bf);
 }
 
