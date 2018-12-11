@@ -38,6 +38,8 @@
 
 #define PROMPT "yubihsm> "
 
+#define ARGS_BUFFER_SIZE 4096
+
 #define COMPLETION_CANDIDATES 256
 #define MAX_COMMAND_NAME 32
 #define MAX_ARGUMENTS 32
@@ -1162,7 +1164,7 @@ unsigned char yubihsm_complete(EditLine *el, int ch) {
 
   int argc, cursorc, cursoro;
   char *argv[64];
-  char data[1025] = {0};
+  char data[ARGS_BUFFER_SIZE + 1] = {0};
 
   li = el_line(el);
 
@@ -1377,7 +1379,9 @@ static bool get_input_data(const char *name, uint8_t *out, size_t *len,
 int validate_arg(yubihsm_context *ctx, char type, const char *value,
                  Argument *parsed, cmd_format fmt) {
 
-  char buffer[1025];
+  char buffer[ARGS_BUFFER_SIZE + 1];
+
+  memset(buffer, 0x0, sizeof(buffer));
 
   switch (type) {
     case 'b':   // byte
@@ -1433,11 +1437,11 @@ int validate_arg(yubihsm_context *ctx, char type, const char *value,
       break;
 
     case 'i':
-      parsed->x = calloc(4096, 1);
+      parsed->x = calloc(ARGS_BUFFER_SIZE + 1, 1);
       if (parsed->x == NULL) {
         return -1;
       }
-      parsed->len = 4096;
+      parsed->len = ARGS_BUFFER_SIZE;
       if (get_input_data(value, parsed->x, &parsed->len, fmt) == false) {
         return -1;
       }
@@ -1453,7 +1457,8 @@ int validate_arg(yubihsm_context *ctx, char type, const char *value,
 
     case 'k':
       if (strcmp(value, "stdin:") == 0) {
-        if (EVP_read_pw_string(buffer, 1024, "Enter hex key: ", 0) != 0) {
+        if (EVP_read_pw_string(buffer, ARGS_BUFFER_SIZE,
+                               "Enter hex key: ", 0) != 0) {
           return -1;
         }
         value = buffer;
@@ -1501,9 +1506,10 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
   char *argv[64];
   int i = 0;
 
-  char data[4097];
+<<<<<<< HEAD
+  char data[ARGS_BUFFER_SIZE + 1];
 
-  char arg_data[4097] = {0};
+  char arg_data[ARGS_BUFFER_SIZE + 1] = {0};
 
   Command *command = l;
 
@@ -1522,7 +1528,10 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
 
   CommandFunction *func = NULL;
 
-  if (strlen(line) > 4096) {
+  memset(data, 0x0, sizeof(data));
+  memset(arg_data, 0x0, sizeof(data));
+
+  if (strlen(line) > ARGS_BUFFER_SIZE) {
     printf("Command too long\n");
     return 0;
   }
@@ -1552,7 +1561,7 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
 
             args = command->args;
             strncpy(arg_data, args,
-                    1024); // since tokenize() modifies the buffer..
+                    ARGS_BUFFER_SIZE); // since tokenize() modifies the buffer..
             int num_args = tokenize(arg_data, arg_toks, 64, NULL, NULL, ",");
             if (num_args + 1 + i !=
                 argc) { // some arguments might have default values
@@ -1623,8 +1632,9 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
     }
   } else {
     if (invalid_arg == true) {
-      char arg[1024];
-      strcpy(arg, args);
+      char arg[ARGS_BUFFER_SIZE + 1];
+      memset(arg, 0x0, sizeof(arg));
+      strncpy(arg, args, ARGS_BUFFER_SIZE);
       char *end = strchr(args, ',');
       if (end) {
         arg[end - args] = '\0';
@@ -1776,7 +1786,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (args_info.action_given) {
-    uint8_t buf[4096] = {0};
+    uint8_t buf[ARGS_BUFFER_SIZE] = {0};
 
     ctx.out = open_file(args_info.out_arg, false);
     if (ctx.out == NULL) {
@@ -2338,6 +2348,7 @@ int main(int argc, char *argv[]) {
           LIB_SUCCEED_OR_DIE(YHR_GENERIC_ERROR, "Command not implemented: ");
           // TODO(adma): this requires a hex parser
 
+        case action_arg_signMINUS_eddsa:
         case action_arg_signMINUS_ecdsa: {
           if (args_info.algorithm_given == 0) {
             fprintf(stderr, "Missing argument algorithm\n");
@@ -2359,14 +2370,18 @@ int main(int argc, char *argv[]) {
             break;
           }
 
-          comrc = yh_com_sign_ecdsa(&ctx, arg,
-                                    ctx.out_fmt == fmt_nofmt ? fmt_base64
-                                                             : ctx.out_fmt);
+          if (args_info.action_arg[i] == action_arg_signMINUS_ecdsa) {
+            comrc = yh_com_sign_ecdsa(&ctx, arg,
+                                      ctx.out_fmt == fmt_nofmt ? fmt_base64
+                                                               : ctx.out_fmt);
+          } else {
+            comrc = yh_com_sign_eddsa(&ctx, arg,
+                                      ctx.out_fmt == fmt_nofmt ? fmt_base64
+                                                               : ctx.out_fmt);
+          }
+
           COM_SUCCEED_OR_DIE(comrc, "Unable to sign data");
         } break;
-
-        case action_arg_signMINUS_eddsa:
-          LIB_SUCCEED_OR_DIE(YHR_GENERIC_ERROR, "Command not implemented: ");
 
         case action_arg_signMINUS_pkcs1v15: {
           if (args_info.algorithm_given == 0) {
