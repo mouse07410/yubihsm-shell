@@ -3035,6 +3035,9 @@ yh_rc yh_util_import_authentication_key(
   memcpy(data.delegated_capabilities, delegated_capabilities,
          YH_CAPABILITIES_LEN);
 
+  DBG_INFO("Sending \"put authkey command:\nkeyid=0x%04x domains=0x%04x caps=0x%08lx d.caps=0x%08lx\n",
+           data.key_id, data.domains,
+           *(unsigned long*)(&data.capabilities), *(unsigned long*)(&data.delegated_capabilities));
   yh_rc yrc = yh_send_secure_msg(session, YHC_PUT_AUTHENTICATION_KEY, data.buf,
                                  sizeof(data), &response_cmd, response.buf,
                                  &response_len);
