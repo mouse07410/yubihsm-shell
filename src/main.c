@@ -1785,7 +1785,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (args_info.action_given) {
-    uint8_t buf[ARG_BUFFER_SIZE] = {0};
+    uint8_t buf[ARGS_BUFFER_SIZE] = {0};
 
     ctx.out = open_file(args_info.out_arg, false);
     if (ctx.out == NULL) {
