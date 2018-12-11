@@ -95,7 +95,7 @@ set (yubihsm_shell_VERSION_PATCH 0)
 set (VERSION "${yubihsm_shell_VERSION_MAJOR}.${yubihsm_shell_VERSION_MINOR}.${yubihsm_shell_VERSION_PATCH}")
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/openssl/lib/pkgconfig:/usr/local/opt/pcsc-lite/lib/pkgconfig")
+  set(ENV{PKG_CONFIG_PATH} "/opt/local/lib/pkgconfig:/usr/local/opt/pcsc-lite/lib/pkgconfig")
 endif ()
 
 if (NOT DEFINED DEFAULT_CONNECTOR_URL)
@@ -179,7 +179,7 @@ add_subdirectory(yhwrap)
 add_custom_target (
   cppcheck
   COMMENT "Running cppcheck"
-  COMMAND /usr/bin/cppcheck
+  COMMAND /opt/local/bin/cppcheck
   --enable=warning,style,unusedFunction,missingInclude
   --template="[{severity}][{id}] {message} {callstack} \(On {file}:{line}\)"
   -i ${CMAKE_SOURCE_DIR}/src/cmdline.c
