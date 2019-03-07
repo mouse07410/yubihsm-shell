@@ -16,11 +16,11 @@
 
 set (
   SOURCE
-  ${CMAKE_SOURCE_DIR}/aes_cmac/aes.c
-  ${CMAKE_SOURCE_DIR}/aes_cmac/aes_cmac.c
-  ${CMAKE_SOURCE_DIR}/common/hash.c
-  ${CMAKE_SOURCE_DIR}/common/pkcs5.c
-  ${CMAKE_SOURCE_DIR}/common/rand.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/../aes_cmac/aes.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/../aes_cmac/aes_cmac.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/../common/hash.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/../common/pkcs5.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/../common/rand.c
   error.c
   lib_util.c
   yubihsm.c
@@ -52,11 +52,7 @@ if(${WIN32})
   endif(${WIN32_BCRYPT})
   list(APPEND SOURCE ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 
-  if(${STATIC_USB})
-    list(APPEND STATIC_SOURCE yubihsm_winusb.c yubihsm_usb.c)
-  else(${STATIC_USB})
-    list(APPEND STATIC_SOURCE yubihsm_winhttp.c)
-  endif(${STATIC_USB})
+  list(APPEND STATIC_SOURCE yubihsm_winusb.c yubihsm_usb.c yubihsm_winhttp.c)
 else(${WIN32})
   set(ADDITIONAL_LIBRARY -ldl)
   set (
@@ -74,15 +70,11 @@ else(${WIN32})
   set(USB_LIBRARY ${LIBUSB_LDFLAGS})
   set(CRYPT_LIBRARY ${LIBCRYPTO_LDFLAGS})
 
-  if(${STATIC_USB})
-    list(APPEND STATIC_SOURCE yubihsm_libusb.c yubihsm_usb.c)
-  else(${STATIC_USB})
-    list(APPEND STATIC_SOURCE yubihsm_curl.c)
-  endif(${STATIC_USB})
+  list(APPEND STATIC_SOURCE yubihsm_libusb.c yubihsm_usb.c yubihsm_curl.c)
 endif(${WIN32})
 
 include_directories (
-  ${CMAKE_SOURCE_DIR}/lib
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${LIBCRYPTO_INCLUDEDIR}
 )
 
@@ -98,7 +90,7 @@ set_target_properties (yubihsm_http PROPERTIES VERSION "${yubihsm_shell_VERSION_
 if (ENABLE_STATIC)
   add_library (yubihsm_static STATIC ${STATIC_SOURCE})
   set_target_properties (yubihsm_static PROPERTIES POSITION_INDEPENDENT_CODE on OUTPUT_NAME yubihsm)
-  set_target_properties (yubihsm_static PROPERTIES COMPILE_FLAGS "-DSTATIC")
+  set_target_properties (yubihsm_static PROPERTIES COMPILE_FLAGS "-DSTATIC " )
   add_coverage (yubihsm_static)
 endif()
 
@@ -108,9 +100,9 @@ else(${WIN32})
     set(LIBUSB_CFLAGS "${LIBUSB_CFLAGS} -DNO_LIBUSB_STRERROR")
   endif()
   set_target_properties (yubihsm_usb PROPERTIES COMPILE_FLAGS ${LIBUSB_CFLAGS})
-  if(ENABLE_STATIC AND STATIC_USB)
-    set_target_properties (yubihsm_static PROPERTIES COMPILE_FLAGS ${LIBUSB_CFLAGS})
-  endif(ENABLE_STATIC AND STATIC_USB)
+  if(ENABLE_STATIC)
+    set_property(TARGET yubihsm_static APPEND_STRING PROPERTY COMPILE_FLAGS ${LIBUSB_CFLAGS})
+  endif(ENABLE_STATIC)
 endif(${WIN32})
 
 add_coverage (yubihsm)
@@ -124,11 +116,7 @@ target_link_libraries (yubihsm ${CRYPT_LIBRARY} ${ADDITIONAL_LIBRARY})
 target_link_libraries (yubihsm_usb ${USB_LIBRARY})
 target_link_libraries (yubihsm_http ${HTTP_LIBRARY})
 if(ENABLE_STATIC)
-  if(${STATIC_USB})
-    target_link_libraries (yubihsm_static ${CRYPT_LIBRARY} ${ADDITIONAL_LIBRARY} ${USB_LIBRARY})
-  else(${STATIC_USB})
-    target_link_libraries (yubihsm_static ${CRYPT_LIBRARY} ${ADDITIONAL_LIBRARY} ${HTTP_LIBRARY})
-  endif(${STATIC_USB})
+  target_link_libraries (yubihsm_static ${CRYPT_LIBRARY} ${ADDITIONAL_LIBRARY} ${HTTP_LIBRARY} ${USB_LIBRARY})
 endif(ENABLE_STATIC)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/yubihsm.pc.in ${CMAKE_CURRENT_BINARY_DIR}/yubihsm.pc @ONLY)
