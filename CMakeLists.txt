@@ -23,6 +23,8 @@ endif ()
 
 project (yubihsm-shell)
 
+option(BUILD_ONLY_LIB "Library only build" OFF)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
 # Set various install paths
@@ -73,7 +75,9 @@ if (CMAKE_C_COMPILER_ID STREQUAL GNU)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
   endif ()
 else ()
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
+  if (CMAKE_C_COMPILER_VERSION VERSION_GREATER 5.0)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
+  endif ()
 endif ()
 
 if (CMAKE_C_COMPILER_ID STREQUAL AppleClang)
@@ -155,28 +159,33 @@ else()
 
   find_package (PkgConfig REQUIRED)
   pkg_search_module (LIBCRYPTO REQUIRED libcrypto)
-  pkg_search_module (LIBEDIT REQUIRED libedit)
+  if(NOT BUILD_ONLY_LIB)
+    pkg_search_module (LIBEDIT REQUIRED libedit)
+  endif()
   pkg_search_module (LIBCURL REQUIRED libcurl)
   pkg_search_module (LIBUSB REQUIRED libusb-1.0)
 endif()
 
 add_subdirectory (lib)
-add_subdirectory (pkcs11)
 
-if (ENABLE_EXPERIMENTAL_YKYH)
-  pkg_search_module (LIBPCSC REQUIRED libpcsclite)
-  add_subdirectory (ykyh)
+if(NOT BUILD_ONLY_LIB)
+  add_subdirectory (pkcs11)
+
+  if (ENABLE_EXPERIMENTAL_YKYH)
+    pkg_search_module (LIBPCSC REQUIRED libpcsclite)
+    add_subdirectory (ykyh)
+  endif()
+
+  add_subdirectory (src)
+
+  add_subdirectory (examples)
+
+  if (ENABLE_EXPERIMENTAL_YKYH)
+    add_subdirectory (yhauth)
+  endif()
+
+  add_subdirectory(yhwrap)
 endif()
-
-add_subdirectory (src)
-
-add_subdirectory (examples)
-
-if (ENABLE_EXPERIMENTAL_YKYH)
-  add_subdirectory (yhauth)
-endif()
-
-add_subdirectory(yhwrap)
 
 add_custom_target (
   cppcheck

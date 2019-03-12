@@ -226,9 +226,9 @@ void create_command_list(CommandList *c) {
   *c = register_command(*c, (Command){"audit", yh_com_noop, NULL, fmt_nofmt,
                                       fmt_nofmt, "Deal with audit log", NULL,
                                       NULL});
-  register_subcommand(*c,
-                      (Command){"get", yh_com_audit, "e:session", fmt_ASCII,
-                                fmt_nofmt, "Extract log entries", NULL, NULL});
+  register_subcommand(*c, (Command){"get", yh_com_audit, "e:session,F:file=-",
+                                    fmt_ASCII, fmt_nofmt, "Extract log entries",
+                                    NULL, NULL});
   register_subcommand(*c, (Command){"set", yh_com_set_log_index,
                                     "e:session,w:index", fmt_nofmt, fmt_nofmt,
                                     "Set the log index", NULL, NULL});
@@ -449,8 +449,12 @@ void create_command_list(CommandList *c) {
                                     "capabilities,u:nonce_id,i:key",
                                     fmt_hex, fmt_nofmt, "Store a OTP AEAD key",
                                     NULL, NULL});
-  *c = register_command(*c, (Command){"quit", yh_com_quit, NULL, fmt_nofmt,
-                                      fmt_nofmt, "Quit yubihsm", NULL, NULL});
+  *c = register_command(*c,
+                        (Command){"quit", yh_com_quit, NULL, fmt_nofmt,
+                                  fmt_nofmt, "Quit yubihsm-shell", NULL, NULL});
+  *c = register_command(*c,
+                        (Command){"exit", yh_com_quit, NULL, fmt_nofmt,
+                                  fmt_nofmt, "Quit yubihsm-shell", NULL, NULL});
   *c =
     register_command(*c, (Command){"session", yh_com_noop, NULL, fmt_nofmt,
                                    fmt_nofmt, "Manage sessions", NULL, NULL});
@@ -548,7 +552,7 @@ void create_command_list(CommandList *c) {
                                     NULL, NULL});
   register_subcommand(*c, (Command){"outformat", yh_com_set_outformat,
                                     "I:format", fmt_nofmt, fmt_nofmt,
-                                    "Set input format", NULL, NULL});
+                                    "Set output format", NULL, NULL});
   register_subcommand(*c, (Command){"cacert", yh_com_set_cacert, "s:file",
                                     fmt_nofmt, fmt_nofmt,
                                     "Set CA cert to use for https to connector",
@@ -1785,15 +1789,16 @@ int main(int argc, char *argv[]) {
   }
 
 #ifndef __WIN32
-    struct sigaction act;
-    act.sa_handler = timer_handler;
-    act.sa_flags = SA_RESTART;
-    sigaction(SIGALRM, &act, NULL);
+  struct sigaction act;
+  memset(&act, 0, sizeof(act));
+  act.sa_handler = timer_handler;
+  act.sa_flags = SA_RESTART;
+  sigaction(SIGALRM, &act, NULL);
 
-    sigset_t set;
-    sigemptyset(&set);
-    sigaddset(&set, SIGALRM);
-    sigprocmask(SIG_UNBLOCK, &set, NULL);
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGALRM);
+  sigprocmask(SIG_UNBLOCK, &set, NULL);
 #endif
 
   if (args_info.action_given) {
@@ -2555,6 +2560,21 @@ int main(int argc, char *argv[]) {
             yh_com_audit(&ctx, arg,
                          ctx.out_fmt == fmt_nofmt ? fmt_ASCII : ctx.out_fmt);
           COM_SUCCEED_OR_DIE(comrc, "Unable to extract logs");
+        } break;
+
+        case action_arg_setMINUS_logMINUS_index: {
+          if (args_info.log_index_given == 0) {
+            fprintf(stderr, "Missing argument log-index\n");
+            rc = EXIT_FAILURE;
+            break;
+          }
+
+          arg[1].w = args_info.log_index_arg;
+
+          comrc = yh_com_set_log_index(&ctx, arg,
+                                       ctx.out_fmt == fmt_nofmt ? fmt_ASCII
+                                                                : ctx.out_fmt);
+          COM_SUCCEED_OR_DIE(comrc, "Unable to set log index");
         } break;
 
         case action__NULL:
