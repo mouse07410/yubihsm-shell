@@ -112,6 +112,10 @@ typedef Command *CommandList;
 Command *register_command(CommandList list, Command command) {
 
   Command *c = calloc(1, sizeof(Command));
+  if (c == NULL) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    exit(EXIT_FAILURE);
+  }
 
   assert(strlen(command.name) <= MAX_COMMAND_NAME);
 
@@ -124,11 +128,11 @@ Command *register_command(CommandList list, Command command) {
 void register_subcommand(Command *parent, Command command) {
 
   Command *c = malloc(sizeof(Command));
-
   if (c == NULL) {
     fprintf(stderr, "Failed to allocate memory\n");
     exit(EXIT_FAILURE);
   }
+
   memcpy(c, &command, sizeof(Command));
   c->next = parent->subcommands;
   parent->subcommands = c;
@@ -1291,13 +1295,13 @@ static FILE *open_file(const char *name, bool input) {
     if (strcmp(name, "-") == 0) {
       return stdin;
     } else {
-      return fopen(name, "r");
+      return fopen(name, "rb");
     }
   } else {
     if (strcmp(name, "-") == 0) {
       return stdout;
     } else {
-      return fopen(name, "a");
+      return fopen(name, "ab");
     }
   }
 }
@@ -1813,21 +1817,41 @@ int main(int argc, char *argv[]) {
 
     yh_com_connect(&ctx, NULL, fmt_nofmt);
 
-    Argument arg[7];
-    arg[0].w = args_info.authkey_arg;
-    arg[1].x = buf;
-    arg[1].len = sizeof(buf);
-    if (get_input_data(args_info.password_given ? args_info.password_arg : "-",
-                       arg[1].x, &arg[1].len, fmt_password) == false) {
-      fprintf(stderr, "Failed to get password\n");
-      rc = EXIT_FAILURE;
-      goto main_exit;
+    bool requires_session = false;
+    for (unsigned i = 0; i < args_info.action_given; i++) {
+      switch (args_info.action_arg[i]) {
+        case action_arg_getMINUS_deviceMINUS_info:
+          requires_session = false;
+          break;
+
+        default:
+          requires_session = true;
+      }
+
+      if (requires_session == true) {
+        break;
+      }
     }
-    comrc = yh_com_open_session(&ctx, arg, fmt_nofmt);
-    if (comrc != 0) {
-      fprintf(stderr, "Failed to open session\n");
-      rc = EXIT_FAILURE;
-      goto main_exit;
+
+    Argument arg[7];
+
+    if (requires_session == true) {
+      arg[0].w = args_info.authkey_arg;
+      arg[1].x = buf;
+      arg[1].len = sizeof(buf);
+      if (get_input_data(args_info.password_given ? args_info.password_arg : "-",
+                         arg[1].x, &arg[1].len, fmt_password) == false) {
+        fprintf(stderr, "Failed to get password\n");
+        rc = EXIT_FAILURE;
+        goto main_exit;
+      }
+
+      comrc = yh_com_open_session(&ctx, arg, fmt_nofmt);
+      if (comrc != 0) {
+        fprintf(stderr, "Failed to open session\n");
+        rc = EXIT_FAILURE;
+        goto main_exit;
+      }
     }
 
     for (unsigned i = 0; i < YH_MAX_SESSIONS; i++) {
@@ -2577,6 +2601,19 @@ int main(int argc, char *argv[]) {
           COM_SUCCEED_OR_DIE(comrc, "Unable to set log index");
         } break;
 
+        case action_arg_blinkMINUS_device: {
+          if(args_info.duration_arg < 0 || args_info.duration_arg > 0xff) {
+            fprintf(stderr, "Duration must be in [0, 256]\n");
+            rc = EXIT_FAILURE;
+            break;
+          }
+
+          arg[1].w = args_info.duration_arg;
+
+          comrc = yh_com_blink(&ctx, arg, fmt_nofmt);
+          COM_SUCCEED_OR_DIE(comrc, "Unable to blink device");
+        } break;
+
         case action__NULL:
           printf("ERROR !%u \n", args_info.action_given);
           rc = EXIT_FAILURE;
@@ -2589,7 +2626,9 @@ int main(int argc, char *argv[]) {
 
     calling_device = false;
 
-    yh_util_close_session(arg[0].e);
+    if (requires_session == true) {
+      yh_util_close_session(arg[0].e);
+    }
 
   } else {
     int num;
