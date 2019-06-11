@@ -97,5 +97,6 @@ ASN1_OBJECT *X509_EXTENSION_get_object(X509_EXTENSION *ex) {
 ASN1_OCTET_STRING *X509_EXTENSION_get_data(X509_EXTENSION *ex) {
   return ex->value;
 }
-
+#else
+void nonsence_nothing() { return; }
 #endif /* OPENSSL_VERSION_NUMBER */
