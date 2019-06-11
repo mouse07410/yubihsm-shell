@@ -709,9 +709,9 @@ static bool probe_session(yubihsm_context *ctx, int index) {
 }
 
 #ifdef __WIN32
-static void timer_handler(void *lpParam __attribute__((unused)),
-                          unsigned char TimerOrWaitFired
-                          __attribute__((unused))) {
+static void WINAPI timer_handler(void *lpParam __attribute__((unused)),
+                                 unsigned char TimerOrWaitFired
+                                 __attribute__((unused))) {
 #else
 static void timer_handler(int signo __attribute__((unused))) {
 #endif
@@ -1324,10 +1324,28 @@ static bool get_input_data(const char *name, uint8_t *out, size_t *len,
       return false;
     }
     if (file == stdin && fmt == fmt_password) {
+#ifndef __WIN32
+      // NOTE: we have to stop the timer around the call to
+      // EVP_read_pw_string(), openssl gets sad if a signal hits while waiting
+      // for input from the user. So we stop the timer and restore it when we're
+      // done
+      struct itimerval stoptimer, oldtimer;
+      memset(&stoptimer, 0, sizeof(stoptimer));
+      if (setitimer(ITIMER_REAL, &stoptimer, &oldtimer) != 0) {
+        fprintf(stderr, "Failed to setup timer\n");
+        return false;
+      }
+#endif
       if (EVP_read_pw_string((char *) out, *len, "Enter password: ", 0) == 0) {
         data_len = strlen((char *) out);
         ret = true;
       }
+#ifndef __WIN32
+      if (setitimer(ITIMER_REAL, &oldtimer, NULL) != 0) {
+        fprintf(stderr, "Failed to restore timer\n");
+        return false;
+      }
+#endif
     } else if (read_file(file, out, &data_len)) {
       ret = true;
     }
@@ -1622,8 +1640,10 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
   }
 
   if (found == true) {
+    calling_device = true;
     func(ctx, arguments,
          ctx->out_fmt == fmt_nofmt ? command->out_fmt : ctx->out_fmt);
+    calling_device = false;
 
     for (int i = 0; i < n_arguments; i++) {
       if (arguments[i].x != NULL) {
@@ -1839,7 +1859,8 @@ int main(int argc, char *argv[]) {
       arg[0].w = args_info.authkey_arg;
       arg[1].x = buf;
       arg[1].len = sizeof(buf);
-      if (get_input_data(args_info.password_given ? args_info.password_arg : "-",
+      if (get_input_data(args_info.password_given ? args_info.password_arg
+                                                  : "-",
                          arg[1].x, &arg[1].len, fmt_password) == false) {
         fprintf(stderr, "Failed to get password\n");
         rc = EXIT_FAILURE;
@@ -2602,7 +2623,7 @@ int main(int argc, char *argv[]) {
         } break;
 
         case action_arg_blinkMINUS_device: {
-          if(args_info.duration_arg < 0 || args_info.duration_arg > 0xff) {
+          if (args_info.duration_arg < 0 || args_info.duration_arg > 0xff) {
             fprintf(stderr, "Duration must be in [0, 256]\n");
             rc = EXIT_FAILURE;
             break;
@@ -2684,9 +2705,7 @@ int main(int argc, char *argv[]) {
 #ifndef __WIN32
         history(g_hist, &ev, H_ENTER, buf);
 #endif
-        calling_device = true;
         validate_and_call(&ctx, g_commands, buf);
-        calling_device = false;
       }
     }
 
