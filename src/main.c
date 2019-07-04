@@ -1532,7 +1532,7 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
   char *argv[64];
   int i = 0;
 
-  char data[ARGS_BUFFER_SIZE + 1];
+  char data[ARGS_BUFFER_SIZE + 1] = {0};
 
   char arg_data[ARGS_BUFFER_SIZE + 1] = {0};
 
