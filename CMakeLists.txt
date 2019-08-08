@@ -101,7 +101,7 @@ set (yubihsm_shell_VERSION_PATCH 1)
 set (VERSION "${yubihsm_shell_VERSION_MAJOR}.${yubihsm_shell_VERSION_MINOR}.${yubihsm_shell_VERSION_PATCH}")
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/opt/local/lib/pkgconfig:/usr/local/opt/pcsc-lite/lib/pkgconfig")
+  set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/opt/local/lib/pkgconfig:/opt/local/lib/pkgconfig:/usr/local/opt/pcsc-lite/lib/pkgconfig")
   #set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/openssl/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
   #set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/pcsc-lite/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
   #set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/libedit/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
