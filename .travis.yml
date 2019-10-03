@@ -56,6 +56,16 @@ matrix:
       compiler: clang
       env:
         - LIBEXT="so"
+    - os: linux
+      dist: bionic
+      compiler: gcc
+      env:
+        - LIBEXT="so"
+    - os: linux
+      dist: bionic
+      compiler: clang
+      env:
+        - LIBEXT="so"
     - os: osx
       compiler: clang
       env:
@@ -67,12 +77,13 @@ script:
   - export PKCS11TEST_PATH="/tmp/pkcs11test"
   - popd
   - export krnl="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  - wget https://github.com/square/ghostunnel/releases/download/v1.3.1/ghostunnel-v1.3.1-$krnl-amd64-with-pkcs11 -O ghostunnel
+  - wget -q https://github.com/square/ghostunnel/releases/download/v1.3.1/ghostunnel-v1.3.1-$krnl-amd64-with-pkcs11 -O ghostunnel
   - chmod +x ./ghostunnel
   - ./ghostunnel client --listen localhost:12345 --target hsm-connector01.sthlm.in.yubico.org:8443 --keystore ./.ci/client-combined.pem --cacert ./.ci/server-crt.pem 2>/dev/null &
   - sleep 3
   - export DEFAULT_CONNECTOR_URL=$(curl http://localhost:12345/dispatcher/request)
   - echo $DEFAULT_CONNECTOR_URL
+  - test -n "$DEFAULT_CONNECTOR_URL" || (echo "Unable to obtain a connector URL, aborting"; exit 1)
   - cmake -Bbuild -H. -DENABLE_EXPERIMENTAL_YKYH=1 -DDEFAULT_CONNECTOR_URL="$DEFAULT_CONNECTOR_URL" $CMAKE_EXTRA
   - cmake --build build -- --jobs=2 VERBOSE=1
   - test -e ./build/src/yubihsm-shell
