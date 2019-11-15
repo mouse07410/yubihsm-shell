@@ -49,6 +49,8 @@ static format_t fmt_to_fmt(cmd_format fmt) {
       return _binary;
     case fmt_hex:
       return _hex;
+    case fmt_PEM:
+      return _PEM;
     default:
       return 0;
   }
@@ -899,11 +901,14 @@ int yh_com_get_pubkey(yubihsm_context *ctx, Argument *argv, cmd_format fmt) {
     EC_KEY_free(eckey);
     EC_GROUP_free(group);
   } else {
-    // NOTE(adma): ED25519, there is no support for thi in OpenSSL, so
-    // we manually export them
+    // NOTE(adma): ED25519, there is (was) no support for this in
+    // OpenSSL, so we manually export them
     EVP_PKEY_free(public_key);
-    write_ed25519_key(response, response_len, ctx->out,
-                      ctx->out_fmt == fmt_PEM); // FIXME: do something
+    if (write_ed25519_key(response, response_len, ctx->out, fmt_to_fmt(fmt)) ==
+        false) {
+      fprintf(stderr, "Unable to format ed25519 key\n");
+      return -1;
+    }
     return 0;
   }
 
@@ -942,6 +947,8 @@ int yh_com_get_object_info(yubihsm_context *ctx, Argument *argv,
   const char *type;
   const char *algorithm = "";
   const char *extra_algo = "";
+  char *label = object.label;
+  size_t label_len = strlen(label);
   yh_type_to_string(object.type, &type);
   if (object.algorithm) {
     yh_algo_to_string(object.algorithm, &algorithm);
@@ -949,10 +956,16 @@ int yh_com_get_object_info(yubihsm_context *ctx, Argument *argv,
   }
   yh_domains_to_string(object.domains, domains, 255);
 
+  for (size_t i = 0; i < label_len; i++) {
+    if(isprint(label[i])==0) {
+      label[i] = '.';
+    }
+  }
+
   fprintf(ctx->out,
           "id: 0x%04x, type: %s%s%s, label: \"%s\", length: %d, "
           "domains: %s, sequence: %hhu, origin: ",
-          object.id, type, extra_algo, algorithm, object.label, object.len,
+          object.id, type, extra_algo, algorithm, label, object.len,
           domains, object.sequence);
 
   if (object.origin & YH_ORIGIN_GENERATED) {
