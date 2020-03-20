@@ -8,6 +8,9 @@
  */
 
 #include "openssl-compat.h"
+
+typedef int make_iso_compiler_happy;
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 
 int RSA_set0_key(RSA *r, BIGNUM *n, BIGNUM *e, BIGNUM *d) {
