@@ -23,6 +23,7 @@
 #include "yubihsm-shell.h"
 #include "../common/insecure_memzero.h"
 #include "../common/parsing.h"
+#include "time_win.h"
 
 #include "hash.h"
 #include "util.h"
@@ -34,13 +35,18 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #endif
 
 #include <openssl/rand.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <openssl/bio.h>
-#include <sys/time.h>
+#include <time.h>
+
+#ifdef _MSVC
+#define gettimeofday(a, b) gettimeofday_win(a)
+#endif
 
 static format_t fmt_to_fmt(cmd_format fmt) {
   switch (fmt) {
@@ -2237,6 +2243,9 @@ int yh_com_benchmark(yubihsm_context *ctx, Argument *argv, cmd_format fmt) {
     {YH_ALGO_AES128_CCM_WRAP, 0, 0, ""},
     {YH_ALGO_AES192_CCM_WRAP, 0, 0, ""},
     {YH_ALGO_AES256_CCM_WRAP, 0, 0, ""},
+    {YH_ALGO_AES128_CCM_WRAP, 0, 128, "1024 bytes data"},
+    {YH_ALGO_AES192_CCM_WRAP, 0, 128, "1024 bytes data"},
+    {YH_ALGO_AES256_CCM_WRAP, 0, 128, "1024 bytes data"},
     {YH_ALGO_AES128_YUBICO_OTP, 0, 0, ""},
     {YH_ALGO_AES192_YUBICO_OTP, 0, 0, ""},
     {YH_ALGO_AES256_YUBICO_OTP, 0, 0, ""},
@@ -2373,11 +2382,15 @@ int yh_com_benchmark(yubihsm_context *ctx, Argument *argv, cmd_format fmt) {
                benchmarks[i].algo == YH_ALGO_AES192_CCM_WRAP ||
                benchmarks[i].algo == YH_ALGO_AES256_CCM_WRAP) {
       type = YH_WRAP_KEY;
-      yh_string_to_capabilities("export-wrapped,exportable-under-wrap",
-                                &capabilities);
+      yh_string_to_capabilities(
+        "export-wrapped,exportable-under-wrap,wrap-data", &capabilities);
       yrc =
         yh_util_generate_wrap_key(argv[0].e, &id, label, 0xffff, &capabilities,
                                   benchmarks[i].algo, &capabilities);
+      if (benchmarks[i].bytes > 0) {
+        str2 = " ";
+        str3 = benchmarks[i].special;
+      }
     } else if (benchmarks[i].algo == YH_ALGO_AES128_YUBICO_OTP ||
                benchmarks[i].algo == YH_ALGO_AES192_YUBICO_OTP ||
                benchmarks[i].algo == YH_ALGO_AES256_YUBICO_OTP) {
@@ -2447,6 +2460,12 @@ int yh_com_benchmark(yubihsm_context *ctx, Argument *argv, cmd_format fmt) {
                                  &out_len);
       } else if (yh_is_hmac(benchmarks[i].algo)) {
         yrc = yh_util_sign_hmac(argv[0].e, id, data, benchmarks[i].bytes, out,
+                                &out_len);
+      } else if (benchmarks[i].bytes > 0 &&
+                 (benchmarks[i].algo == YH_ALGO_AES128_CCM_WRAP ||
+                  benchmarks[i].algo == YH_ALGO_AES192_CCM_WRAP ||
+                  benchmarks[i].algo == YH_ALGO_AES256_CCM_WRAP)) {
+        yrc = yh_util_wrap_data(argv[0].e, id, data, benchmarks[i].bytes, out,
                                 &out_len);
       } else if (benchmarks[i].algo == YH_ALGO_AES128_CCM_WRAP ||
                  benchmarks[i].algo == YH_ALGO_AES192_CCM_WRAP ||

@@ -17,6 +17,7 @@
 #ifndef YUBIHSM_INTERNAL_H
 #define YUBIHSM_INTERNAL_H
 
+#include "../common/platform-config.h"
 #include "scp.h"
 
 #include <stdlib.h>
@@ -67,7 +68,8 @@ struct backend_functions {
   yh_backend *(*backend_create)(void);
   yh_rc (*backend_connect)(yh_connector *connector, int timeout);
   void (*backend_disconnect)(yh_backend *connection);
-  yh_rc (*backend_send_msg)(yh_backend *connection, Msg *msg, Msg *response);
+  yh_rc (*backend_send_msg)(yh_backend *connection, Msg *msg, Msg *response,
+                            const char *identifier);
   void (*backend_cleanup)(void);
   yh_rc (*backend_option)(yh_backend *connection, yh_connector_option opt,
                           const void *val);

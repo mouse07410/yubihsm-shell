@@ -20,12 +20,14 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include "../common/platform-config.h"
+#include "../common/time_win.h"
 
 #ifdef __WIN32
 #include <winsock.h>
 #else
 #include <arpa/inet.h>
+#include <pthread.h>
 #endif
 
 #include <openssl/ec.h>
@@ -38,6 +40,11 @@
 #include "../common/util.h"
 #include "../common/openssl-compat.h"
 
+#ifdef _MSVC
+#define gettimeofday(a, b) gettimeofday_win(a)
+#endif
+
+#define UNUSED(x) (void) (x)
 #define ASN1_OID 0x06
 static const uint8_t oid_secp224r1[] = {ASN1_OID, 0x05, 0x2b, 0x81,
                                         0x04,     0x00, 0x21};
@@ -1637,7 +1644,6 @@ yubihsm_pkcs11_object_desc *get_object_desc(yh_session *session,
   }
 
   object->object.type = type;
-
   gettimeofday(&object->tv, NULL);
 
   return object;
@@ -1895,8 +1901,6 @@ CK_RV apply_decrypt_mechanism_init(yubihsm_pkcs11_op_info *op_info) {
       DBG_ERR("Mechanism %lu not supported", op_info->mechanism.mechanism);
       return CKR_MECHANISM_INVALID;
   }
-
-  return CKR_OK;
 }
 
 CK_RV apply_digest_mechanism_init(yubihsm_pkcs11_op_info *op_info) {
@@ -2147,14 +2151,12 @@ CK_RV apply_sign_mechanism_finalize(yubihsm_pkcs11_op_info *op_info) {
   return CKR_OK;
 }
 
-CK_RV apply_verify_mechanism_finalize(yubihsm_pkcs11_op_info *op_info
-                                      __attribute((unused))) {
-
+CK_RV apply_verify_mechanism_finalize(yubihsm_pkcs11_op_info *op_info) {
+  UNUSED(op_info);
   return CKR_OK;
 }
 
-CK_RV apply_decrypt_mechanism_finalize(yubihsm_pkcs11_op_info *op_info
-                                       __attribute((unused))) {
+CK_RV apply_decrypt_mechanism_finalize(yubihsm_pkcs11_op_info *op_info) {
 
   op_info->op.decrypt.finalized = true;
   return CKR_OK;
@@ -3151,7 +3153,7 @@ CK_RV parse_ec_template(CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount,
                         yubihsm_pkcs11_object_template *template) {
 
   uint8_t *ecparams = NULL;
-  uint16_t ecparams_len;
+  uint16_t ecparams_len = 0;
   CK_RV rv;
 
   for (CK_ULONG i = 0; i < ulCount; i++) {
@@ -3408,6 +3410,7 @@ CK_RV parse_rsa_generate_template(CK_ATTRIBUTE_PTR pPublicKeyTemplate,
       case CKA_DECRYPT:
       case CKA_SIGN:
       case CKA_UNWRAP:
+      case CKA_VERIFY_RECOVER:
         if ((rv = check_bool_attribute(pPublicKeyTemplate[i].pValue, false)) !=
             CKR_OK) {
           DBG_ERR("Boolean false check failed for attribute 0x%lx",
@@ -3526,6 +3529,7 @@ CK_RV parse_rsa_generate_template(CK_ATTRIBUTE_PTR pPublicKeyTemplate,
       case CKA_COPYABLE:
       case CKA_ENCRYPT:
       case CKA_VERIFY:
+      case CKA_SIGN_RECOVER:
         if ((rv = check_bool_attribute(pPrivateKeyTemplate[i].pValue, false)) !=
             CKR_OK) {
           DBG_ERR("Boolean false check failed for attribute 0x%lx",
@@ -3648,6 +3652,7 @@ CK_RV parse_ec_generate_template(CK_ATTRIBUTE_PTR pPublicKeyTemplate,
       case CKA_SIGN:
       case CKA_WRAP:
       case CKA_UNWRAP:
+      case CKA_VERIFY_RECOVER:
         if ((rv = check_bool_attribute(pPublicKeyTemplate[i].pValue, false)) !=
             CKR_OK) {
           DBG_ERR("Boolean false check failed for attribute 0x%lx",
@@ -3766,6 +3771,7 @@ CK_RV parse_ec_generate_template(CK_ATTRIBUTE_PTR pPublicKeyTemplate,
       case CKA_COPYABLE:
       case CKA_ENCRYPT:
       case CKA_VERIFY:
+      case CKA_SIGN_RECOVER:
         if ((rv = check_bool_attribute(pPrivateKeyTemplate[i].pValue, false)) !=
             CKR_OK) {
           DBG_ERR("Boolean false check failed for attribute 0x%lx",
