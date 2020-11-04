@@ -80,6 +80,7 @@ endif ()
 
 if (CMAKE_C_COMPILER_ID STREQUAL AppleClang)
   set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -fPIE")
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-nullability-completeness -Wno-nullability-extension -Wno-expansion-to-defined")
 else()
   # -Wl,--strip-all is dependent on linker not compiler...
   set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -Wl,--strip-all -fPIE -pie")
@@ -95,7 +96,7 @@ endif ()
 
 set (yubihsm_shell_VERSION_MAJOR 2)
 set (yubihsm_shell_VERSION_MINOR 0)
-set (yubihsm_shell_VERSION_PATCH 2)
+set (yubihsm_shell_VERSION_PATCH 3)
 set (VERSION "${yubihsm_shell_VERSION_MAJOR}.${yubihsm_shell_VERSION_MINOR}.${yubihsm_shell_VERSION_PATCH}")
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")

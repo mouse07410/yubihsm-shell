@@ -307,7 +307,11 @@ static yh_rc _send_secure_msg(yh_session *session, yh_cmd cmd,
   decrypted_data[0] = cmd;
   decrypted_data[1] = (data_len & 0xff00) >> 8;
   decrypted_data[2] = data_len & 0x00ff;
-  memcpy(decrypted_data + 3, data, data_len);
+  if (data != NULL) {
+    // NOTE(adma): when data_len is 0, data can be NULL. This is UB for
+    // memcpy. Explicitly check against that
+    memcpy(decrypted_data + 3, data, data_len);
+  }
   work_buf_len = 3 + data_len;
 
   DBG_DUMPINFO(decrypted_data, data_len + 3,
@@ -357,6 +361,12 @@ static yh_rc _send_secure_msg(yh_session *session, yh_cmd cmd,
 
   // Response is MAC'ed and encrypted. Unwrap it
   out_len = response_msg.st.len;
+  if (out_len < SCP_MAC_LEN - 3 ||
+      (size_t)(3 + out_len - SCP_MAC_LEN) >= sizeof(work_buf)) {
+    DBG_ERR("Received invalid length %u", out_len);
+    yrc = YHR_BUFFER_TOO_SMALL;
+    goto cleanup;
+  }
 
   memcpy(work_buf, session->s.mac_chaining_value, SCP_PRF_LEN);
   response_msg.st.len = htons(response_msg.st.len);
@@ -709,6 +719,11 @@ yh_rc yh_create_session(yh_connector *connector, uint16_t authkey_id,
 
   // Save sid
   new_session->s.sid = (*ptr++);
+  if (new_session->s.sid > YH_MAX_SESSIONS - 1) {
+    DBG_ERR("Received invalid session ID %d", new_session->s.sid);
+    yrc = YHR_GENERIC_ERROR;
+    goto cs_failure;
+  }
 
   // Save card challenge
   memcpy(new_session->context + SCP_HOST_CHAL_LEN, ptr, SCP_CARD_CHAL_LEN);
@@ -1143,7 +1158,7 @@ yh_rc yh_util_list_objects(yh_session *session, uint16_t id,
   }
 
   *n_objects = response_len / 4;
-  for (uint16_t i = 0; i < response_len; i += 4) {
+  for (size_t i = 0; i < response_len; i += 4) {
     // NOTE: clear the fields that we didn't set
     memset(&objects[i / 4], 0, sizeof(yh_object_descriptor));
     objects[i / 4].id = ntohs(*((uint16_t *) (response + i)));
@@ -2619,7 +2634,7 @@ yh_rc yh_util_get_log_entries(yh_session *session, uint16_t *unlogged_boot,
   *n_items = response.items;
 
   yh_log_entry *ptr = (yh_log_entry *) response.data;
-  for (uint16_t i = 0; i < *n_items; i++) {
+  for (size_t i = 0; i < *n_items; i++) {
     out[i].number = ntohs(ptr[i].number);
     out[i].command = ptr[i].command;
     out[i].length = ntohs(ptr[i].length);
@@ -4553,7 +4568,7 @@ bool yh_verify_logs(yh_log_entry *logs, size_t n_items,
     start = 1;
   }
 
-  for (uint16_t i = start; i < n_items; i++) {
+  for (size_t i = start; i < n_items; i++) {
     yh_log_entry inverted;
     inverted.number = htons(logs[i].number);
     inverted.command = logs[i].command;
