@@ -439,6 +439,7 @@ void create_command_list(CommandList *c) {
                                     "password=-",
                                     fmt_password, fmt_nofmt,
                                     "Store an authentication key", NULL, NULL});
+#ifdef USE_ASYMMETRIC_AUTH
   register_subcommand(*c,
                       (Command){"authkey_asym", yh_com_put_authentication_asym,
                                 "e:session,w:key_id,s:label,d:domains,c:"
@@ -447,6 +448,7 @@ void create_command_list(CommandList *c) {
                                 fmt_password, fmt_nofmt,
                                 "Store an asymmetric authentication key", NULL,
                                 NULL});
+#endif
   register_subcommand(*c, (Command){"opaque", yh_com_put_opaque,
                                     "e:session,w:object_id,s:label,d:domains,c:"
                                     "capabilities,a:algorithm,i:data=-",
@@ -500,12 +502,14 @@ void create_command_list(CommandList *c) {
                                     "Open a session with a device using a "
                                     "specific Authentication Key",
                                     NULL, NULL});
+#ifdef USE_ASYMMETRIC_AUTH
   register_subcommand(*c, (Command){"open_asym", yh_com_open_session_asym,
                                     "w:authkey,i:password=-", fmt_password,
                                     fmt_nofmt,
                                     "Open a session with a device using a "
                                     "specific Asymmetric Authentication Key",
                                     NULL, NULL});
+#endif
   *c = register_command(*c, (Command){"sign", yh_com_noop, NULL, fmt_nofmt,
                                       fmt_nofmt, "Sign data", NULL, NULL});
   register_subcommand(
@@ -562,6 +566,11 @@ void create_command_list(CommandList *c) {
                                     "e:session,w:key_id,s:otp,i:aead",
                                     fmt_binary, fmt_nofmt,
                                     "Decrypt an OTP with AEAD", NULL, NULL});
+  register_subcommand(
+    *c,
+    (Command){"rewrap", yh_com_otp_rewrap,
+              "e:session,w:id_from,w:id_to,i:aead_in,F:aead_out", fmt_binary,
+              fmt_binary, "Rewrap an OTP aead to a different key", NULL, NULL});
   *c = register_command(*c, (Command){"attest", yh_com_noop, NULL, fmt_nofmt,
                                       fmt_nofmt, "Attest device objects", NULL,
                                       NULL});
@@ -612,13 +621,14 @@ void create_command_list(CommandList *c) {
                                 "e:session,w:key_id,i:password=-", fmt_password,
                                 fmt_nofmt, "Change an authentication key", NULL,
                                 NULL});
-
+#ifdef USE_ASYMMETRIC_AUTH
   register_subcommand(*c, (Command){"authkey_asym",
                                     yh_com_change_authentication_key_asym,
                                     "e:session,w:key_id,i:password=-",
                                     fmt_password, fmt_nofmt,
                                     "Change an asymmetric authentication key",
                                     NULL, NULL});
+#endif
 
   *c = msort_list(*c);
 

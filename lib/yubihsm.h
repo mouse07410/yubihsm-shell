@@ -234,6 +234,8 @@ typedef enum {
   YHR_CONNECTOR_ERROR = -29,
   /// Return value when encountering SSH CA constraint violation
   YHR_DEVICE_SSH_CA_CONSTRAINT_VIOLATION = -30,
+  /// Return value when an algorithm is disabled
+  YHR_DEVICE_ALGORITHM_DISABLED = -31,
 } yh_rc;
 
 /// Macro to define command and response command
@@ -486,6 +488,8 @@ typedef enum {
   YH_ALGO_EC_ED25519 = 46,
   /// ecp224
   YH_ALGO_EC_P224 = 47,
+  /// rsa-pkcs1-decrypt
+  YH_ALGO_RSA_PKCS1_DECRYPT = 48,
   /// ec-p256-yubico-authentication
   YH_ALGO_EC_P256_YUBICO_AUTHENTICATION = 49,
 } yh_algorithm;
@@ -498,6 +502,10 @@ typedef enum {
   YH_OPTION_FORCE_AUDIT = 1,
   /// Enable/Disable logging of specific commands
   YH_OPTION_COMMAND_AUDIT = 3,
+  /// Toggle algorithms on/off
+  YH_OPTION_ALGORITHM_TOGGLE = 4,
+  /// Fips mode on/off
+  YH_OPTION_FIPS_MODE = 5,
 } yh_option;
 
 /**
@@ -661,6 +669,7 @@ static const struct {
   {"rsa-oaep-sha256", YH_ALGO_RSA_OAEP_SHA256},
   {"rsa-oaep-sha384", YH_ALGO_RSA_OAEP_SHA384},
   {"rsa-oaep-sha512", YH_ALGO_RSA_OAEP_SHA512},
+  {"rsa-pkcs1-decrypt", YH_ALGO_RSA_PKCS1_DECRYPT},
   {"rsa-pkcs1-sha1", YH_ALGO_RSA_PKCS1_SHA1},
   {"rsa-pkcs1-sha256", YH_ALGO_RSA_PKCS1_SHA256},
   {"rsa-pkcs1-sha384", YH_ALGO_RSA_PKCS1_SHA384},
@@ -694,6 +703,8 @@ static const struct {
 } yh_options[] = {
   {"command-audit", YH_OPTION_COMMAND_AUDIT},
   {"force-audit", YH_OPTION_FORCE_AUDIT},
+  {"algorithm-toggle", YH_OPTION_ALGORITHM_TOGGLE},
+  {"fips-mode", YH_OPTION_FIPS_MODE},
 };
 
 /// The object was generated on the device
@@ -2048,6 +2059,27 @@ yh_rc yh_util_decrypt_otp(yh_session *session, uint16_t key_id,
                           const uint8_t *aead, size_t aead_len,
                           const uint8_t *otp, uint16_t *useCtr,
                           uint8_t *sessionCtr, uint8_t *tstph, uint16_t *tstpl);
+
+/**
+ * Rewrap an OTP AEAD from one #YH_OTP_AEAD_KEY to another.
+ *
+ * @param session Authenticated session to use
+ * @param id_from Object ID of the AEAD Key to wrap from.
+ * @param id_to Object ID of the AEAD Key to wrap to.
+ * @param aead_in AEAD to unwrap
+ * @param in_len Length of AEAD
+ * @param aead_out The created AEAD
+ * @param out_len Length of output AEAD
+ *
+ * @return #YHR_SUCCESS if successful.
+ *         #YHR_INVALID_PARAMETERS if input parameters are NULL.
+ *         See #yh_rc for other possible errors
+ **/
+
+yh_rc yh_util_rewrap_otp_aead(yh_session *session, uint16_t id_from,
+                              uint16_t id_to, const uint8_t *aead_in,
+                              size_t in_len, uint8_t *aead_out,
+                              size_t *out_len);
 
 /**
  * Import an #YH_OTP_AEAD_KEY used for Yubico OTP Decryption

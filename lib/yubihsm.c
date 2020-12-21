@@ -207,8 +207,9 @@ static yh_rc translate_device_error(uint8_t device_error) {
     _DEVICE_INVALID_ID = 0x0c,                   // Invalid ID
     _DEVICE_SSH_CA_CONSTRAINT_VIOLIATION = 0x0e, // CA constraint violation
     _DEVICE_INVALID_OTP = 0x0f,                  // Invalid OTP
-    _DEVICE_DEMO_MODE = 0x10,     // Demo mode, power cycle device
-    _DEVICE_OBJECT_EXISTS = 0x11, // Object with that ID already exists
+    _DEVICE_DEMO_MODE = 0x10,          // Demo mode, power cycle device
+    _DEVICE_OBJECT_EXISTS = 0x11,      // Object with that ID already exists
+    _DEVICE_ALGORITHM_DISABLED = 0x12, // Algorithm is disabled
     _DEVICE_COMMAND_UNEXECUTED =
       0xff, // The command execution has not terminated
   };
@@ -264,6 +265,9 @@ static yh_rc translate_device_error(uint8_t device_error) {
 
     case _DEVICE_OBJECT_EXISTS:
       return YHR_DEVICE_OBJECT_EXISTS;
+
+    case _DEVICE_ALGORITHM_DISABLED:
+      return YHR_DEVICE_ALGORITHM_DISABLED;
 
     case _DEVICE_COMMAND_UNEXECUTED:
       return YHR_DEVICE_COMMAND_UNEXECUTED;
@@ -3686,6 +3690,52 @@ yh_rc yh_util_decrypt_otp(yh_session *session, uint16_t key_id,
   }
   if (tstpl) {
     *tstpl = response.tstpl;
+  }
+
+  return YHR_SUCCESS;
+}
+
+yh_rc yh_util_rewrap_otp_aead(yh_session *session, uint16_t id_from,
+                              uint16_t id_to, const uint8_t *aead_in,
+                              size_t in_len, uint8_t *aead_out,
+                              size_t *out_len) {
+
+#pragma pack(push, 1)
+  union {
+    struct {
+      uint16_t from_key;
+      uint16_t to_key;
+      uint8_t aead[6 + 16 + 6 + 8]; // FIXME: magic numbers!
+    };
+    uint8_t buf[1];
+  } data;
+#pragma pack(pop)
+
+  if (session == NULL || aead_in == NULL || aead_out == NULL ||
+      out_len == NULL || in_len != sizeof(data.aead) ||
+      *out_len < sizeof(data.aead)) {
+    DBG_ERR("%s", yh_strerror(YHR_INVALID_PARAMETERS));
+    return YHR_INVALID_PARAMETERS;
+  }
+
+  data.from_key = htons(id_from);
+  data.to_key = htons(id_to);
+  memcpy(data.aead, aead_in, sizeof(data.aead));
+
+  yh_cmd response_cmd;
+  yh_rc yrc =
+    yh_send_secure_msg(session, YHC_REWRAP_OTP_AEAD, data.buf, sizeof(data),
+                       &response_cmd, aead_out, out_len);
+  if (yrc != YHR_SUCCESS) {
+    DBG_ERR("Failed to send REWRAP OTP AEAD command: %s\n", yh_strerror(yrc));
+    return yrc;
+  }
+
+  if (response_cmd == YHC_ERROR) {
+    yh_rc translated = translate_device_error(aead_out[0]);
+    DBG_ERR("Unable to get REWRAPPED OTP AEAD: %s (%x)\n",
+            yh_strerror(translated), aead_out[0]);
+    return translated;
   }
 
   return YHR_SUCCESS;
