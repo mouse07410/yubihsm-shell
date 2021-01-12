@@ -15,9 +15,7 @@
  */
 
 #include <ctype.h>
-#include <errno.h>
 #include <string.h>
-#include <limits.h>
 
 #include <openssl/bio.h>
 #include <openssl/evp.h>
@@ -38,9 +36,7 @@ bool set_component(unsigned char *in_ptr, const BIGNUM *bn, int element_len) {
 
   memset(in_ptr, 0, (size_t)(element_len - real_len));
   in_ptr += element_len - real_len;
-  BN_bn2bin(bn, in_ptr);
-
-  return true;
+  return BN_bn2bin(bn, in_ptr) > 0;
 }
 
 static unsigned const char sha1oid[] = {0x30, 0x21, 0x30, 0x09, 0x06,
@@ -88,8 +84,18 @@ bool read_ed25519_key(uint8_t *in, size_t in_len, uint8_t *out,
   }
 
   int ret;
-  BIO *b64 = BIO_new(BIO_f_base64());
-  BIO *bio = BIO_new(BIO_s_mem());
+  BIO *b64 = NULL;
+  BIO *bio = NULL;
+
+  b64 = BIO_new(BIO_f_base64());
+  if (b64 == NULL) {
+    return false;
+  }
+  bio = BIO_new(BIO_s_mem());
+  if (bio == NULL) {
+    BIO_free_all(b64);
+    return false;
+  }
   BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
   BIO_push(b64, bio);
 
@@ -183,6 +189,9 @@ bool read_private_key(uint8_t *buf, size_t len, yh_algorithm *algo,
   switch (EVP_PKEY_base_id(private_key)) {
     case EVP_PKEY_RSA: {
       rsa = EVP_PKEY_get1_RSA(private_key);
+      if (rsa == NULL) {
+        goto cleanup;
+      }
       unsigned char e[4];
       int size = RSA_size(rsa);
       const BIGNUM *bn_n, *bn_e, *bn_p, *bn_q;
@@ -538,8 +547,18 @@ bool read_file(FILE *fp, uint8_t *buf, size_t *buf_len) {
 
 bool base64_decode(const char *in, uint8_t *out, size_t *len) {
   int ret;
-  BIO *b64 = BIO_new(BIO_f_base64());
-  BIO *bio = BIO_new(BIO_s_mem());
+  BIO *b64 = NULL;
+  BIO *bio = NULL;
+
+  b64 = BIO_new(BIO_f_base64());
+  if (b64 == NULL) {
+    return false;
+  }
+  bio = BIO_new(BIO_s_mem());
+  if (bio == NULL) {
+    BIO_free_all(b64);
+    return false;
+  }
   BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
   BIO_push(b64, bio);
 
@@ -557,41 +576,6 @@ bool base64_decode(const char *in, uint8_t *out, size_t *len) {
   }
 }
 
-bool hex_decode(const char *in, uint8_t *out, size_t *len) {
-  int pos = 0;
-  size_t in_len = strlen(in);
-  if (in_len > 0 && in[in_len - 1] == '\n') {
-    in_len--;
-  }
-  if (in_len > 0 && in[in_len - 1] == '\r') {
-    in_len--;
-  }
-  if (in_len % 2 != 0) {
-    return false;
-  } else if (in_len / 2 > *len) {
-    return false;
-  }
-
-  for (size_t i = 0; i < in_len / 2; i++) {
-    char *endptr = NULL;
-    char buf[3] = {0};
-    long num;
-    errno = 0;
-
-    buf[0] = in[pos];
-    buf[1] = in[pos + 1];
-    num = strtol((const char *) buf, &endptr, 16);
-    if ((errno == ERANGE && (num < 0 || num > UCHAR_MAX)) ||
-        (errno != 0 && num == 0) || *endptr != '\0') {
-      return false;
-    }
-    out[i] = (uint8_t) num;
-    pos += 2;
-  }
-  *len = in_len / 2;
-  return true;
-}
-
 bool write_file(const uint8_t *buf, size_t buf_len, FILE *fp, format_t format) {
 
   const uint8_t *p = buf;
@@ -605,7 +589,14 @@ bool write_file(const uint8_t *buf, size_t buf_len, FILE *fp, format_t format) {
     BUF_MEM *bufferPtr;
 
     b64 = BIO_new(BIO_f_base64());
+    if (b64 == NULL) {
+      return false;
+    }
     bio = BIO_new(BIO_s_mem());
+    if (bio == NULL) {
+      BIO_free_all(b64);
+      return false;
+    }
     bio = BIO_push(b64, bio);
 
     (void) BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
@@ -744,30 +735,4 @@ bool split_hmac_key(yh_algorithm algorithm, uint8_t *in, size_t in_len,
   *out_len = 2 * block_size;
 
   return true;
-}
-
-size_t parse_hex(const char *hex, size_t hex_len, uint8_t *parsed) {
-
-  size_t j = 0;
-
-  for (size_t i = 0; i < hex_len; i += 2) {
-    if (isxdigit(hex[i]) == 0 || isxdigit(hex[i + 1]) == 0) {
-      break;
-    }
-
-    if (isdigit(hex[i])) {
-      parsed[j] = (hex[i] - '0') << 4;
-    } else {
-      parsed[j] = (tolower(hex[i]) - 'a' + 10) << 4;
-    }
-
-    if (isdigit(hex[i + 1])) {
-      parsed[j] |= (hex[i + 1] - '0');
-    } else {
-      parsed[j] |= (tolower(hex[i + 1]) - 'a' + 10);
-    }
-
-    j++;
-  }
-  return j;
 }

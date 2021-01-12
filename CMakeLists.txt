@@ -205,20 +205,23 @@ add_subdirectory (lib)
 if(NOT BUILD_ONLY_LIB)
   add_subdirectory (pkcs11)
 
-  if (ENABLE_EXPERIMENTAL_YKYH)
-    if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-      pkg_search_module (LIBPCSC REQUIRED libpcsclite)
-    endif()
-    add_subdirectory (ykyh)
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    pkg_search_module (LIBPCSC REQUIRED libpcsclite)
+  elseif(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+    set (LIBPCSC_LDFLAGS "winscard.lib")
   endif()
+
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    set(LIBPCSC_LDFLAGS "-Wl,-framework -Wl,PCSC")
+  endif()
+
+  add_subdirectory (ykhsmauth)
 
   add_subdirectory (src)
 
   add_subdirectory (examples)
 
-  if (ENABLE_EXPERIMENTAL_YKYH)
-    add_subdirectory (yhauth)
-  endif()
+  add_subdirectory (yubihsm-auth)
 
   add_subdirectory(yhwrap)
 endif()

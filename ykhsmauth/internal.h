@@ -14,24 +14,22 @@
  * limitations under the License.
  */
 
-#ifndef YKYH_INTERNAL_H
-#define YKYH_INTERNAL_H
+#ifndef YKHSMAUTH_INTERNAL_H
+#define YKHSMAUTH_INTERNAL_H
 
 #include <stdbool.h>
 
-//#if BACKEND_PCSC
-//#if defined HAVE_PCSC_WINSCARD_H
+#if defined(_WIN32)
+#include <winscard.h>
+#else
 #include <PCSC/wintypes.h>
 #include <PCSC/winscard.h>
-//#else
-//# include <winscard.h>
-//#endif
-//#endif
+#endif
 
 #define READER_LEN 32
 #define MAX_READERS 16
 
-struct ykyh_state {
+struct ykhsmauth_state {
   SCARDCONTEXT context;
   SCARDHANDLE card;
   int verbose;

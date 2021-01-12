@@ -28,6 +28,7 @@
 #include <sys/types.h>
 
 #include "util.h"
+#include "parsing.h"
 #include "commands.h"
 
 #include <openssl/evp.h>
@@ -382,11 +383,13 @@ void create_command_list(CommandList *c) {
                                     "e:session,w:object_id,F:out=-", fmt_nofmt,
                                     fmt_base64, "Get a template object", NULL,
                                     NULL});
+#ifdef USE_ASYMMETRIC_AUTH
   register_subcommand(*c, (Command){"devicepubkey", yh_com_get_device_pubkey,
                                     NULL, fmt_nofmt, fmt_PEM,
                                     "Get the device public key for asymmetric "
                                     "authentication",
                                     NULL, NULL});
+#endif
   *c =
     register_command(*c, (Command){"help", yh_com_help, "s:command=", fmt_nofmt,
                                    fmt_nofmt, "Display help text", NULL, NULL});
@@ -1764,6 +1767,16 @@ int validate_and_call(yubihsm_context *ctx, CommandList l, const char *line) {
   return 0;
 }
 
+static void free_configured_connectors(yubihsm_context *ctx) {
+  if (ctx->connector_list) {
+    for (int i = 0; ctx->connector_list[i]; i++) {
+      free(ctx->connector_list[i]);
+    }
+    free(ctx->connector_list);
+    ctx->connector_list = NULL;
+  }
+}
+
 static int parse_configured_connectors(yubihsm_context *ctx, char **connectors,
                                        int n_connectors) {
 
@@ -1775,16 +1788,24 @@ static int parse_configured_connectors(yubihsm_context *ctx, char **connectors,
   for (int i = 0; i < n_connectors; i++) {
     ctx->connector_list[i] = strdup(connectors[i]);
     if (ctx->connector_list[i] == NULL) {
-      while (--i >= 0) {
-        free(ctx->connector_list[i]);
-      }
-      free(ctx->connector_list);
-      ctx->connector_list = NULL;
+      free_configured_connectors(ctx);
       return -1;
     }
   }
 
   return 0;
+}
+
+#ifdef USE_ASYMMETRIC_AUTH
+
+static void free_configured_pubkeys(yubihsm_context *ctx) {
+  if (ctx->device_pubkey_list) {
+    for (int i = 0; ctx->device_pubkey_list[i]; i++) {
+      free(ctx->device_pubkey_list[i]);
+    }
+    free(ctx->device_pubkey_list);
+    ctx->device_pubkey_list = NULL;
+  }
 }
 
 static int parse_configured_pubkeys(yubihsm_context *ctx, char **pubkeys,
@@ -1796,24 +1817,22 @@ static int parse_configured_pubkeys(yubihsm_context *ctx, char **pubkeys,
 
   for (int i = 0; i < n_pubkeys; i++) {
     uint8_t pk[80];
-    size_t pk_len = parse_hex(pubkeys[i], 2 * sizeof(pk), pk);
+    size_t pk_len = sizeof(pk);
+    hex_decode(pubkeys[i], pk, &pk_len);
     if (pk_len == YH_EC_P256_PUBKEY_LEN) {
       ctx->device_pubkey_list[i] = malloc(pk_len);
     }
     if (ctx->device_pubkey_list[i]) {
       memcpy(ctx->device_pubkey_list[i], pk, pk_len);
     } else {
-      while (--i >= 0) {
-        free(ctx->device_pubkey_list[i]);
-      }
-      free(ctx->device_pubkey_list);
-      ctx->device_pubkey_list = NULL;
+      free_configured_pubkeys(ctx);
       return -1;
     }
   }
 
   return 0;
 }
+#endif
 
 int main(int argc, char *argv[]) {
 
@@ -1905,12 +1924,20 @@ int main(int argc, char *argv[]) {
     goto main_exit;
   }
 
+#ifdef USE_ASYMMETRIC_AUTH
   if (parse_configured_pubkeys(&ctx, args_info.device_pubkey_arg,
                                args_info.device_pubkey_given) == -1) {
     fprintf(stderr, "Unable to parse device pubkey list\n");
     rc = EXIT_FAILURE;
     goto main_exit;
   }
+#else
+  if (args_info.device_pubkey_given) {
+    fprintf(stderr, "This build does not support device-pubkey option\n");
+    rc = EXIT_FAILURE;
+    goto main_exit;
+  }
+#endif
 
   if (getenv("DEBUG") != NULL) {
     args_info.verbose_arg = YH_VERB_ALL;
@@ -1924,32 +1951,22 @@ int main(int argc, char *argv[]) {
     goto main_exit;
   }
 
-#ifdef USE_YKYH
-  ykyh_rc ykyhrc;
-  ykyhrc = ykyh_init(&ctx.state, 1); // TODO(adma): do something about verbosity
-  if (ykyhrc != YKYHR_SUCCESS) {
-    fprintf(stderr, "Failed to initialize libykyh\n");
+  ykhsmauth_rc ykhsmauthrc;
+  ykhsmauthrc =
+    ykhsmauth_init(&ctx.state, 1); // TODO(adma): do something about verbosity
+  if (ykhsmauthrc != YKHSMAUTHR_SUCCESS) {
+    fprintf(stderr, "Failed to initialize libykhsmauth\n");
     rc = EXIT_FAILURE;
     goto main_exit;
   }
-#endif
 
   if (ctx.connector_list[0] == NULL) {
     fprintf(stderr, "Using default connector URL: %s\n", LOCAL_CONNECTOR_URL);
 
-    ctx.connector_list = calloc(2, sizeof(char *));
-    if (ctx.connector_list == NULL) {
-      fprintf(stderr, "Failed to allocate memory\n");
-      rc = EXIT_FAILURE;
-      goto main_exit;
-    }
+    char *local_connector_url = LOCAL_CONNECTOR_URL;
 
-    ctx.connector_list[0] = strdup(LOCAL_CONNECTOR_URL);
-    if (ctx.connector_list[0] == NULL) {
-      fprintf(stderr, "Failed to allocate memory\n");
-      rc = EXIT_FAILURE;
-      goto main_exit;
-    }
+    free_configured_connectors(&ctx);
+    parse_configured_connectors(&ctx, &local_connector_url, 1);
   }
 
   if (args_info.cacert_given) {
@@ -2226,10 +2243,15 @@ int main(int argc, char *argv[]) {
         } break;
 
         case action_arg_getMINUS_deviceMINUS_pubkey:
+#ifdef USE_ASYMMETRIC_AUTH
           comrc = yh_com_get_device_pubkey(&ctx, arg, fmt_nofmt,
                                            g_out_fmt == fmt_nofmt ? fmt_PEM
                                                                   : g_out_fmt);
           COM_SUCCEED_OR_DIE(comrc, "Unable to get device public key");
+#else
+          fprintf(stderr, "get-device-pubkey not supported in this build.");
+          rc = EXIT_FAILURE;
+#endif
           break;
 
         case action_arg_getMINUS_objectMINUS_info: {
@@ -2844,18 +2866,14 @@ main_exit:
 
   yh_exit();
 
-#ifdef USE_YKYH
-  ykyh_done(ctx.state); // TODO(adma): more consistent naming
+  ykhsmauth_done(ctx.state);
   ctx.state = NULL;
+
+#ifdef USE_ASYMMETRIC_AUTH
+  free_configured_pubkeys(&ctx);
 #endif
 
-  if (ctx.connector_list != NULL) {
-    for (int i = 0; ctx.connector_list[i]; i++) {
-      free(ctx.connector_list[i]);
-    }
-    free(ctx.connector_list);
-    ctx.connector_list = NULL;
-  }
+  free_configured_connectors(&ctx);
 
   return rc;
 }

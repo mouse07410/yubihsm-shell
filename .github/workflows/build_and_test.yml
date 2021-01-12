@@ -7,7 +7,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
         include:
           - os: ubuntu-20.04
@@ -36,7 +35,7 @@ jobs:
           - os: macos-latest
             cc: clang
             libext: dylib
-            test: true
+            test: false
     steps:
     - uses: actions/checkout@v1
     - name: Dependencies
@@ -45,7 +44,7 @@ jobs:
         OS: ${{ matrix.os }}
       run: |
         if [ "$OS" = "macos-latest" ]; then
-          brew update
+        # no update - no upgrade
           brew install cmake gengetopt help2man libedit libusb openssl@1.1 pcsc-lite pkg-config swig truncate
         else
         # the github actions ubuntu 16.04 comes with a broken ppa that we need to get rid of everything from
@@ -97,7 +96,7 @@ jobs:
         CC: ${{ matrix.cc }}
         LIBEXT: ${{ matrix.libext }}
       run: |
-        cmake -Bbuild -H. -DENABLE_EXPERIMENTAL_YKYH=1 -DDEFAULT_CONNECTOR_URL="$DEFAULT_CONNECTOR_URL"
+        cmake -Bbuild -H. -DDEFAULT_CONNECTOR_URL="$DEFAULT_CONNECTOR_URL"
         cmake --build build -- --jobs=2
         test -e ./build/src/yubihsm-shell
         test -e ./build/lib/libyubihsm.$LIBEXT

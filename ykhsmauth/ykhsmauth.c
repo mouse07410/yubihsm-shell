@@ -20,10 +20,15 @@
 #include <stdint.h>
 
 #include "internal.h"
-#include "ykyh.h"
+#include "ykhsmauth.h"
 
-static ykyh_rc send_data(ykyh_state *state, APDU *apdu, unsigned char *data,
-                         unsigned long *recv_len, int *sw);
+#ifdef _WIN32
+#define strncasecmp _strnicmp
+#endif
+
+static ykhsmauth_rc send_data(ykhsmauth_state *state, APDU *apdu,
+                              unsigned char *data, unsigned long *recv_len,
+                              int *sw);
 
 static void dump_hex(const unsigned char *buf, unsigned int len) {
   unsigned int i;
@@ -32,67 +37,67 @@ static void dump_hex(const unsigned char *buf, unsigned int len) {
   }
 }
 
-static ykyh_rc translate_error(uint16_t sw, uint8_t *retries) {
+static ykhsmauth_rc translate_error(uint16_t sw, uint8_t *retries) {
   if ((sw & 0xfff0) == SW_ERR_AUTHENTICATION_FAILED) {
     if (retries != NULL) {
       *retries = sw & ~SW_ERR_AUTHENTICATION_FAILED;
     }
-    return YKYHR_WRONG_PW;
+    return YKHSMAUTHR_WRONG_PW;
   } else if (sw == SW_FILE_FULL) {
-    return YKYHR_STORAGE_FULL;
+    return YKHSMAUTHR_STORAGE_FULL;
   } else if (sw == SW_FILE_NOT_FOUND) {
-    return YKYHR_ENTRY_NOT_FOUND;
+    return YKHSMAUTHR_ENTRY_NOT_FOUND;
   } else if (sw == SW_MEMORY_ERROR) {
-    return YKYHR_MEMORY_ERROR;
+    return YKHSMAUTHR_MEMORY_ERROR;
   } else if (sw == SW_SECURITY_STATUS_NOT_SATISFIED) {
-    return YKYHR_TOUCH_ERROR;
+    return YKHSMAUTHR_TOUCH_ERROR;
   } else {
-    return YKYHR_GENERIC_ERROR;
+    return YKHSMAUTHR_GENERIC_ERROR;
   }
 }
 
-ykyh_rc ykyh_init(ykyh_state **state, int verbose) {
+ykhsmauth_rc ykhsmauth_init(ykhsmauth_state **state, int verbose) {
   if (state == NULL) {
     if (verbose) {
       fprintf(stderr, "Unable to initialize: %s",
-              ykyh_strerror(YKYHR_INVALID_PARAMS));
+              ykhsmauth_strerror(YKHSMAUTHR_INVALID_PARAMS));
     }
 
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
-  ykyh_state *s = malloc(sizeof(ykyh_state));
+  ykhsmauth_state *s = malloc(sizeof(ykhsmauth_state));
 
   if (s == NULL) {
     if (verbose) {
       fprintf(stderr, "Unable to initialize: %s",
-              ykyh_strerror(YKYHR_MEMORY_ERROR));
+              ykhsmauth_strerror(YKHSMAUTHR_MEMORY_ERROR));
     }
 
-    return YKYHR_MEMORY_ERROR;
+    return YKHSMAUTHR_MEMORY_ERROR;
   }
 
-  memset(s, 0, sizeof(ykyh_state));
+  memset(s, 0, sizeof(ykhsmauth_state));
   s->verbose = verbose;
   s->context = SCARD_E_INVALID_HANDLE;
   *state = s;
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_done(ykyh_state *state) {
-  ykyh_disconnect(state);
+ykhsmauth_rc ykhsmauth_done(ykhsmauth_state *state) {
+  ykhsmauth_disconnect(state);
 
   if (state != NULL) {
     free(state);
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_disconnect(ykyh_state *state) {
+ykhsmauth_rc ykhsmauth_disconnect(ykhsmauth_state *state) {
   if (state == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   if (state->card) {
@@ -105,10 +110,10 @@ ykyh_rc ykyh_disconnect(ykyh_state *state) {
     state->context = SCARD_E_INVALID_HANDLE;
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_connect(ykyh_state *state, const char *wanted) {
+ykhsmauth_rc ykhsmauth_connect(ykhsmauth_state *state, const char *wanted) {
   unsigned long active_protocol;
   char reader_buf[2048];
   size_t num_readers = sizeof(reader_buf);
@@ -116,13 +121,13 @@ ykyh_rc ykyh_connect(ykyh_state *state, const char *wanted) {
   char *reader_ptr;
 
   if (state == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
-  ykyh_rc ret = ykyh_list_readers(state, reader_buf, &num_readers);
-  if (ret != YKYHR_SUCCESS) {
+  ykhsmauth_rc ret = ykhsmauth_list_readers(state, reader_buf, &num_readers);
+  if (ret != YKHSMAUTHR_SUCCESS) {
     if (state->verbose) {
-      fprintf(stderr, "Unable to list_readers: %s", ykyh_strerror(ret));
+      fprintf(stderr, "Unable to list_readers: %s", ykhsmauth_strerror(ret));
     }
 
     return ret;
@@ -159,7 +164,7 @@ ykyh_rc ykyh_connect(ykyh_state *state, const char *wanted) {
     unsigned char data[0xff];
     unsigned long recv_len = sizeof(data);
     int sw;
-    ykyh_rc res;
+    ykhsmauth_rc res;
 
     memset(apdu.raw, 0, sizeof(apdu));
     apdu.st.ins = 0xa4;
@@ -168,15 +173,15 @@ ykyh_rc ykyh_connect(ykyh_state *state, const char *wanted) {
     memcpy(apdu.st.data, aid, sizeof(aid));
 
     if ((res = send_data(state, &apdu, data, &recv_len, &sw)) !=
-        YKYHR_SUCCESS) {
+        YKHSMAUTHR_SUCCESS) {
       if (state->verbose) {
         fprintf(stderr, "Failed communicating with card: '%s'\n",
-                ykyh_strerror(res));
+                ykhsmauth_strerror(res));
       }
 
       continue;
     } else if (sw == SW_SUCCESS) {
-      return YKYHR_SUCCESS;
+      return YKHSMAUTHR_SUCCESS;
     } else {
       if (state->verbose) {
         fprintf(stderr, "Failed selecting application: %04x\n", sw);
@@ -190,18 +195,19 @@ ykyh_rc ykyh_connect(ykyh_state *state, const char *wanted) {
     }
     SCardReleaseContext(state->context);
     state->context = SCARD_E_INVALID_HANDLE;
-    return YKYHR_PCSC_ERROR;
+    return YKHSMAUTHR_PCSC_ERROR;
   }
 
-  return YKYHR_GENERIC_ERROR;
+  return YKHSMAUTHR_GENERIC_ERROR;
 }
 
-ykyh_rc ykyh_list_readers(ykyh_state *state, char *readers, size_t *len) {
+ykhsmauth_rc ykhsmauth_list_readers(ykhsmauth_state *state, char *readers,
+                                    size_t *len) {
   unsigned long num_readers = 0;
   long rc;
 
   if (state == NULL || readers == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   if (SCardIsValidContext(state->context) != SCARD_S_SUCCESS) {
@@ -210,7 +216,7 @@ ykyh_rc ykyh_list_readers(ykyh_state *state, char *readers, size_t *len) {
       if (state->verbose) {
         fprintf(stderr, "error: SCardEstablishContext failed, rc=%08lx\n", rc);
       }
-      return YKYHR_PCSC_ERROR;
+      return YKHSMAUTHR_PCSC_ERROR;
     }
   }
 
@@ -221,7 +227,7 @@ ykyh_rc ykyh_list_readers(ykyh_state *state, char *readers, size_t *len) {
     }
     SCardReleaseContext(state->context);
     state->context = SCARD_E_INVALID_HANDLE;
-    return YKYHR_PCSC_ERROR;
+    return YKHSMAUTHR_PCSC_ERROR;
   }
 
   if (num_readers > *len) {
@@ -235,16 +241,17 @@ ykyh_rc ykyh_list_readers(ykyh_state *state, char *readers, size_t *len) {
     }
     SCardReleaseContext(state->context);
     state->context = SCARD_E_INVALID_HANDLE;
-    return YKYHR_PCSC_ERROR;
+    return YKHSMAUTHR_PCSC_ERROR;
   }
 
   *len = num_readers;
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-static ykyh_rc send_data(ykyh_state *state, APDU *apdu, unsigned char *data,
-                         unsigned long *recv_len, int *sw) {
+static ykhsmauth_rc send_data(ykhsmauth_state *state, APDU *apdu,
+                              unsigned char *data, unsigned long *recv_len,
+                              int *sw) {
   long rc;
   unsigned int send_len = (unsigned int) apdu->st.lc + 5;
 
@@ -261,7 +268,7 @@ static ykyh_rc send_data(ykyh_state *state, APDU *apdu, unsigned char *data,
     if (state->verbose) {
       fprintf(stderr, "error: SCardTransmit failed, rc=%08lx\n", rc);
     }
-    return YKYHR_PCSC_ERROR;
+    return YKHSMAUTHR_PCSC_ERROR;
   }
 
   if (state->verbose > 1) {
@@ -276,60 +283,73 @@ static ykyh_rc send_data(ykyh_state *state, APDU *apdu, unsigned char *data,
     *sw = 0;
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_get_version(ykyh_state *state, char *version, size_t len) {
+ykhsmauth_rc ykhsmauth_get_version(ykhsmauth_state *state, char *version,
+                                   size_t len) {
   APDU apdu;
   unsigned char data[261];
   unsigned long recv_len = sizeof(data);
   int sw;
-  ykyh_rc res;
+  ykhsmauth_rc res;
 
   if (state == NULL || version == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_GET_VERSION;
-  if ((res = send_data(state, &apdu, data, &recv_len, &sw)) != YKYHR_SUCCESS) {
+  apdu.st.ins = YKHSMAUTH_INS_GET_VERSION;
+  if ((res = send_data(state, &apdu, data, &recv_len, &sw)) !=
+      YKHSMAUTHR_SUCCESS) {
     return res;
-  } else if (sw == SW_SUCCESS) {
+  } else if (sw == SW_SUCCESS && recv_len == 3) {
     int result = snprintf(version, len, "%d.%d.%d", data[0], data[1], data[2]);
     if (result < 0) {
       if (state->verbose) {
         fprintf(stderr, "Version buffer too small\n");
       }
-      return YKYHR_GENERIC_ERROR;
+      return YKHSMAUTHR_GENERIC_ERROR;
     }
-    return YKYHR_SUCCESS;
+    return YKHSMAUTHR_SUCCESS;
   } else {
     return translate_error(sw, NULL);
   }
 }
 
-ykyh_rc ykyh_put(ykyh_state *state, const uint8_t *authkey, size_t authkey_len,
-                 const char *name, const uint8_t *key_enc, size_t key_enc_len,
-                 const uint8_t *key_mac, size_t key_mac_len, const char *pw,
-                 const uint8_t touch_policy, uint8_t *retries) {
+ykhsmauth_rc ykhsmauth_put(ykhsmauth_state *state, const uint8_t *authkey,
+                           size_t authkey_len, const char *name, uint8_t algo,
+                           const uint8_t *key, size_t key_len,
+                           const uint8_t *pw, size_t pw_len,
+                           const uint8_t touch_policy, uint8_t *retries) {
   APDU apdu;
   uint8_t *ptr = apdu.st.data;
   unsigned char data[261];
   unsigned long recv_len = sizeof(data);
   int sw;
 
-  if (state == NULL || authkey == NULL || authkey_len != YKYH_KEY_LEN ||
-      name == NULL || strlen(name) < YKYH_MIN_NAME_LEN ||
-      strlen(name) > YKYH_MAX_NAME_LEN || key_enc == NULL ||
-      key_enc_len != YKYH_KEY_LEN || key_mac == NULL ||
-      key_mac_len != YKYH_KEY_LEN || pw == NULL || strlen(pw) != YKYH_KEY_LEN) {
-    return YKYHR_INVALID_PARAMS;
+  if (state == NULL || authkey == NULL || authkey_len != YKHSMAUTH_PW_LEN ||
+      name == NULL || strlen(name) < YKHSMAUTH_MIN_NAME_LEN ||
+      strlen(name) > YKHSMAUTH_MAX_NAME_LEN || key == NULL || pw == NULL ||
+      pw_len > YKHSMAUTH_PW_LEN) {
+    return YKHSMAUTHR_INVALID_PARAMS;
+  }
+
+  if (algo != YKHSMAUTH_YUBICO_AES128_ALGO) {
+    if (state->verbose) {
+      fprintf(stderr, "Only YKHSMAUTH_YUBICO_AES128_ALGO supported\n");
+    }
+    return YKHSMAUTHR_INVALID_PARAMS;
+  }
+
+  if (key_len != YKHSMAUTH_YUBICO_AES128_KEY_LEN) {
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_PUT;
+  apdu.st.ins = YKHSMAUTH_INS_PUT;
 
-  *(ptr++) = YKYH_TAG_AUTHKEY;
+  *(ptr++) = YKHSMAUTH_TAG_AUTHKEY;
   apdu.st.lc++;
   *(ptr++) = 16;
   apdu.st.lc++;
@@ -337,7 +357,7 @@ ykyh_rc ykyh_put(ykyh_state *state, const uint8_t *authkey, size_t authkey_len,
   ptr += 16;
   apdu.st.lc += 16;
 
-  *(ptr++) = YKYH_TAG_NAME;
+  *(ptr++) = YKHSMAUTH_TAG_NAME;
   apdu.st.lc++;
   *(ptr++) = strlen(name);
   apdu.st.lc++;
@@ -345,46 +365,48 @@ ykyh_rc ykyh_put(ykyh_state *state, const uint8_t *authkey, size_t authkey_len,
   ptr += strlen(name);
   apdu.st.lc += strlen(name);
 
-  *(ptr++) = YKYH_TAG_ALGO;
+  *(ptr++) = YKHSMAUTH_TAG_ALGO;
   apdu.st.lc++;
   *(ptr++) = 1;
   apdu.st.lc++;
-  *(ptr++) = YKYH_SCP03_ALGO;
+  *(ptr++) = algo;
   apdu.st.lc++;
 
-  *(ptr++) = YKYH_TAG_KEY_ENC;
+  *(ptr++) = YKHSMAUTH_TAG_KEY_ENC;
   apdu.st.lc++;
-  *(ptr++) = 16;
+  *(ptr++) = YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2;
   apdu.st.lc++;
-  memcpy(ptr, key_enc, 16);
-  ptr += 16;
-  apdu.st.lc += 16;
+  memcpy(ptr, key, YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2);
+  ptr += YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2;
+  apdu.st.lc += YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2;
 
-  *(ptr++) = YKYH_TAG_KEY_MAC;
+  *(ptr++) = YKHSMAUTH_TAG_KEY_MAC;
   apdu.st.lc++;
-  *(ptr++) = 16;
+  *(ptr++) = YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2;
   apdu.st.lc++;
-  memcpy(ptr, key_mac, 16);
-  ptr += 16;
-  apdu.st.lc += 16;
+  memcpy(ptr, key + YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2,
+         YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2);
+  ptr += YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2;
+  apdu.st.lc += YKHSMAUTH_YUBICO_AES128_KEY_LEN / 2;
 
-  *(ptr++) = YKYH_TAG_PW;
+  *(ptr++) = YKHSMAUTH_TAG_PW;
   apdu.st.lc++;
-  *(ptr++) = YKYH_PW_LEN;
+  *(ptr++) = YKHSMAUTH_PW_LEN;
   apdu.st.lc++;
-  memcpy(ptr, pw, YKYH_PW_LEN);
-  ptr += YKYH_PW_LEN;
-  apdu.st.lc += YKYH_PW_LEN;
+  memcpy(ptr, pw, pw_len);
+  memset(ptr + pw_len, 0, YKHSMAUTH_PW_LEN - pw_len);
+  ptr += YKHSMAUTH_PW_LEN;
+  apdu.st.lc += YKHSMAUTH_PW_LEN;
 
-  *(ptr++) = YKYH_TAG_TOUCH;
+  *(ptr++) = YKHSMAUTH_TAG_TOUCH;
   apdu.st.lc++;
   *(ptr++) = 1;
   apdu.st.lc++;
   *(ptr++) = touch_policy ? 1 : 0;
   apdu.st.lc++;
 
-  ykyh_rc rc = send_data(state, &apdu, data, &recv_len, &sw);
-  if (rc != YKYHR_SUCCESS) {
+  ykhsmauth_rc rc = send_data(state, &apdu, data, &recv_len, &sw);
+  if (rc != YKHSMAUTHR_SUCCESS) {
     return rc;
   } else if (sw != SW_SUCCESS) {
     if (state->verbose) {
@@ -394,30 +416,31 @@ ykyh_rc ykyh_put(ykyh_state *state, const uint8_t *authkey, size_t authkey_len,
     return translate_error(sw, retries);
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_delete(ykyh_state *state, uint8_t *authkey, size_t authkey_len,
-                    char *name, uint8_t *retries) {
+ykhsmauth_rc ykhsmauth_delete(ykhsmauth_state *state, uint8_t *authkey,
+                              size_t authkey_len, char *name,
+                              uint8_t *retries) {
   APDU apdu;
   uint8_t *ptr;
   unsigned char data[64];
   unsigned long recv_len = sizeof(data);
   int sw;
-  ykyh_rc rc;
+  ykhsmauth_rc rc;
 
-  if (state == NULL || authkey == NULL || authkey_len != YKYH_KEY_LEN ||
-      name == NULL || strlen(name) < YKYH_MIN_NAME_LEN ||
-      strlen(name) > YKYH_MAX_NAME_LEN) {
-    return YKYHR_INVALID_PARAMS;
+  if (state == NULL || authkey == NULL || authkey_len != YKHSMAUTH_PW_LEN ||
+      name == NULL || strlen(name) < YKHSMAUTH_MIN_NAME_LEN ||
+      strlen(name) > YKHSMAUTH_MAX_NAME_LEN) {
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_DELETE;
+  apdu.st.ins = YKHSMAUTH_INS_DELETE;
 
   ptr = apdu.st.data;
 
-  *(ptr++) = YKYH_TAG_AUTHKEY;
+  *(ptr++) = YKHSMAUTH_TAG_AUTHKEY;
   apdu.st.lc++;
   *(ptr++) = 16;
   apdu.st.lc++;
@@ -425,7 +448,7 @@ ykyh_rc ykyh_delete(ykyh_state *state, uint8_t *authkey, size_t authkey_len,
   ptr += 16;
   apdu.st.lc += 16;
 
-  *(ptr++) = YKYH_TAG_NAME;
+  *(ptr++) = YKHSMAUTH_TAG_NAME;
   apdu.st.lc++;
   *(ptr++) = strlen(name);
   apdu.st.lc++;
@@ -434,7 +457,7 @@ ykyh_rc ykyh_delete(ykyh_state *state, uint8_t *authkey, size_t authkey_len,
   apdu.st.lc += strlen(name);
 
   rc = send_data(state, &apdu, data, &recv_len, &sw);
-  if (rc != YKYHR_SUCCESS) {
+  if (rc != YKHSMAUTHR_SUCCESS) {
     return rc;
   } else if (sw != SW_SUCCESS) {
     if (state->verbose) {
@@ -444,37 +467,40 @@ ykyh_rc ykyh_delete(ykyh_state *state, uint8_t *authkey, size_t authkey_len,
     return translate_error(sw, retries);
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_calculate(ykyh_state *state, const char *name, uint8_t *context,
-                       size_t context_len, const char *pw, uint8_t *key_s_enc,
-                       size_t key_s_enc_len, uint8_t *key_s_mac,
-                       size_t key_s_mac_len, uint8_t *key_s_rmac,
-                       size_t key_s_rmac_len, uint8_t *retries) {
+ykhsmauth_rc ykhsmauth_calculate(ykhsmauth_state *state, const char *name,
+                                 uint8_t *context, size_t context_len,
+                                 const uint8_t *pw, size_t pw_len,
+                                 uint8_t *key_s_enc, size_t key_s_enc_len,
+                                 uint8_t *key_s_mac, size_t key_s_mac_len,
+                                 uint8_t *key_s_rmac, size_t key_s_rmac_len,
+                                 uint8_t *retries) {
   APDU apdu;
   uint8_t *ptr;
-  unsigned char data[64]; // NOTE(adma): must be >= (YKYH_KEY_LEN * 3) + 2 = 50
+  unsigned char
+    data[64]; // NOTE(adma): must be >= (YKHSMAUTH_KEY_LEN * 3) + 2 = 50
   unsigned long recv_len = sizeof(data);
   int sw;
-  ykyh_rc rc;
+  ykhsmauth_rc rc;
 
-  if (state == NULL || name == NULL || strlen(name) < YKYH_MIN_NAME_LEN ||
-      strlen(name) > YKYH_MAX_NAME_LEN || context == NULL ||
-      context_len != YKYH_CONTEXT_LEN || pw == NULL ||
-      strlen(pw) != YKYH_PW_LEN || key_s_enc == NULL ||
-      key_s_enc_len != YKYH_KEY_LEN || key_s_mac == NULL ||
-      key_s_mac_len != YKYH_KEY_LEN || key_s_rmac == NULL ||
-      key_s_rmac_len != YKYH_KEY_LEN) {
-    return YKYHR_INVALID_PARAMS;
+  if (state == NULL || name == NULL || strlen(name) < YKHSMAUTH_MIN_NAME_LEN ||
+      strlen(name) > YKHSMAUTH_MAX_NAME_LEN || context == NULL ||
+      context_len != YKHSMAUTH_CONTEXT_LEN || pw == NULL ||
+      pw_len > YKHSMAUTH_PW_LEN || key_s_enc == NULL ||
+      key_s_enc_len != YKHSMAUTH_SESSION_KEY_LEN || key_s_mac == NULL ||
+      key_s_mac_len != YKHSMAUTH_SESSION_KEY_LEN || key_s_rmac == NULL ||
+      key_s_rmac_len != YKHSMAUTH_SESSION_KEY_LEN) {
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_CALCULATE;
+  apdu.st.ins = YKHSMAUTH_INS_CALCULATE;
 
   ptr = apdu.st.data;
 
-  *(ptr++) = YKYH_TAG_NAME;
+  *(ptr++) = YKHSMAUTH_TAG_NAME;
   apdu.st.lc++;
   *(ptr++) = strlen(name);
   apdu.st.lc++;
@@ -482,7 +508,7 @@ ykyh_rc ykyh_calculate(ykyh_state *state, const char *name, uint8_t *context,
   ptr += strlen(name);
   apdu.st.lc += strlen(name);
 
-  *(ptr++) = YKYH_TAG_CONTEXT;
+  *(ptr++) = YKHSMAUTH_TAG_CONTEXT;
   apdu.st.lc++;
   *(ptr++) = context_len;
   apdu.st.lc++;
@@ -490,16 +516,17 @@ ykyh_rc ykyh_calculate(ykyh_state *state, const char *name, uint8_t *context,
   ptr += context_len;
   apdu.st.lc += context_len;
 
-  *(ptr++) = YKYH_TAG_PW;
+  *(ptr++) = YKHSMAUTH_TAG_PW;
   apdu.st.lc++;
-  *(ptr++) = YKYH_PW_LEN;
+  *(ptr++) = YKHSMAUTH_PW_LEN;
   apdu.st.lc++;
-  memcpy(ptr, pw, YKYH_PW_LEN);
-  ptr += YKYH_PW_LEN;
-  apdu.st.lc += YKYH_PW_LEN;
+  memcpy(ptr, pw, pw_len);
+  memset(ptr + pw_len, 0, YKHSMAUTH_PW_LEN - pw_len);
+  ptr += YKHSMAUTH_PW_LEN;
+  apdu.st.lc += YKHSMAUTH_PW_LEN;
 
   rc = send_data(state, &apdu, data, &recv_len, &sw);
-  if (rc != YKYHR_SUCCESS) {
+  if (rc != YKHSMAUTHR_SUCCESS) {
     return rc;
   } else if (sw != SW_SUCCESS) {
     if (state->verbose) {
@@ -508,40 +535,46 @@ ykyh_rc ykyh_calculate(ykyh_state *state, const char *name, uint8_t *context,
 
     return translate_error(sw, retries);
   }
+  if (recv_len != YKHSMAUTH_SESSION_KEY_LEN * 3) {
+    if (state->verbose) {
+      fprintf(stderr, "Wrong length returned: %lu\n", recv_len);
+    }
+    return YKHSMAUTHR_GENERIC_ERROR;
+  }
 
   ptr = data;
 
-  memcpy(key_s_enc, ptr, YKYH_KEY_LEN);
-  ptr += YKYH_KEY_LEN;
-  memcpy(key_s_mac, ptr, YKYH_KEY_LEN);
-  ptr += YKYH_KEY_LEN;
-  memcpy(key_s_rmac, ptr, YKYH_KEY_LEN);
-  ptr += YKYH_KEY_LEN;
+  memcpy(key_s_enc, ptr, YKHSMAUTH_SESSION_KEY_LEN);
+  ptr += YKHSMAUTH_SESSION_KEY_LEN;
+  memcpy(key_s_mac, ptr, YKHSMAUTH_SESSION_KEY_LEN);
+  ptr += YKHSMAUTH_SESSION_KEY_LEN;
+  memcpy(key_s_rmac, ptr, YKHSMAUTH_SESSION_KEY_LEN);
+  ptr += YKHSMAUTH_SESSION_KEY_LEN;
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_reset(ykyh_state *state) {
+ykhsmauth_rc ykhsmauth_reset(ykhsmauth_state *state) {
 
   APDU apdu;
   unsigned char data[8];
   unsigned long recv_len = sizeof(data);
   int sw;
-  ykyh_rc res;
+  ykhsmauth_rc res;
 
   if (state == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_RESET;
-  apdu.st.p1 = YKYH_P1_RESET;
-  apdu.st.p2 = YKYH_P2_RESET;
+  apdu.st.ins = YKHSMAUTH_INS_RESET;
+  apdu.st.p1 = YKHSMAUTH_P1_RESET;
+  apdu.st.p2 = YKHSMAUTH_P2_RESET;
 
   res = send_data(state, &apdu, data, &recv_len, &sw);
   if (sw != SW_SUCCESS) {
     if (state->verbose) {
-      fprintf(stderr, "Unable to reset: %s\n", ykyh_strerror(res));
+      fprintf(stderr, "Unable to reset: %s\n", ykhsmauth_strerror(res));
     }
 
     return translate_error(sw, NULL);
@@ -550,24 +583,25 @@ ykyh_rc ykyh_reset(ykyh_state *state) {
   return res;
 }
 
-ykyh_rc ykyh_list_keys(ykyh_state *state, ykyh_list_entry *list,
-                       size_t *list_items) {
+ykhsmauth_rc ykhsmauth_list_keys(ykhsmauth_state *state,
+                                 ykhsmauth_list_entry *list,
+                                 size_t *list_items) {
 
   APDU apdu;
   unsigned char data[1024];
   unsigned long recv_len = sizeof(data);
   int sw;
-  ykyh_rc rc;
+  ykhsmauth_rc rc;
 
   if (state == NULL || list_items == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_LIST;
+  apdu.st.ins = YKHSMAUTH_INS_LIST;
 
   rc = send_data(state, &apdu, data, &recv_len, &sw);
-  if (rc != YKYHR_SUCCESS) {
+  if (rc != YKHSMAUTHR_SUCCESS) {
     return rc;
   } else if (sw != SW_SUCCESS) {
     if (state->verbose) {
@@ -577,21 +611,24 @@ ykyh_rc ykyh_list_keys(ykyh_state *state, ykyh_list_entry *list,
     return translate_error(sw, NULL);
   }
 
-  if (list == NULL) {
-    *list_items = data[0];
-
-    return YKYHR_SUCCESS;
-  }
-
   size_t element = 0;
   size_t i = 0;
 
-  while (i < recv_len) {
-    if (data[i++] == YKYH_TAG_NAME_LIST) {
+  // i + 1 here guarantees we can read tag and len
+  while (i + 1 < recv_len) {
+    if (data[i++] == YKHSMAUTH_TAG_NAME_LIST) {
       size_t len = data[i++];
       if (list != NULL) {
         if (element >= *list_items) {
-          return YKYHR_MEMORY_ERROR;
+          return YKHSMAUTHR_MEMORY_ERROR;
+        } else if (i + len > recv_len || len < 3 ||
+                   len - 3 > sizeof(list[element].name)) {
+          if (state->verbose) {
+            fprintf(stderr,
+                    "Length of element doesn't match expectations (%zu)\n",
+                    len);
+          }
+          return YKHSMAUTHR_GENERIC_ERROR;
         }
 
         list[element].algo = data[i++];
@@ -604,39 +641,45 @@ ykyh_rc ykyh_list_keys(ykyh_state *state, ykyh_list_entry *list,
         i += len;
       }
       element++;
+    } else {
+      if (state->verbose) {
+        fprintf(stderr, "Unexpected tag returned on list\n");
+      }
+      return YKHSMAUTHR_GENERIC_ERROR;
     }
   }
 
   *list_items = element;
 
   if (i != recv_len) {
-    return YKYHR_GENERIC_ERROR;
+    return YKHSMAUTHR_GENERIC_ERROR;
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_get_challenge(ykyh_state *state) {
+ykhsmauth_rc ykhsmauth_get_challenge(ykhsmauth_state *state) {
 
   (void) state;
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_get_authkey_retries(ykyh_state *state, uint8_t *retries) {
+ykhsmauth_rc ykhsmauth_get_authkey_retries(ykhsmauth_state *state,
+                                           uint8_t *retries) {
   APDU apdu;
   unsigned char data[261];
   unsigned long recv_len = sizeof(data);
   int sw;
-  ykyh_rc rc;
+  ykhsmauth_rc rc;
 
   if (state == NULL || retries == NULL) {
-    return YKYHR_INVALID_PARAMS;
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_GET_AUTHKEY_RETRIES;
+  apdu.st.ins = YKHSMAUTH_INS_GET_AUTHKEY_RETRIES;
   rc = send_data(state, &apdu, data, &recv_len, &sw);
-  if (rc != YKYHR_SUCCESS) {
+  if (rc != YKHSMAUTHR_SUCCESS) {
     return rc;
   } else if (sw != SW_SUCCESS) {
     if (state->verbose) {
@@ -648,27 +691,27 @@ ykyh_rc ykyh_get_authkey_retries(ykyh_state *state, uint8_t *retries) {
 
   *retries = data[0];
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
 
-ykyh_rc ykyh_put_authkey(ykyh_state *state, uint8_t *authkey,
-                         size_t authkey_len, uint8_t *new_authkey,
-                         size_t new_authkey_len, uint8_t *retries) {
+ykhsmauth_rc ykhsmauth_put_authkey(ykhsmauth_state *state, uint8_t *authkey,
+                                   size_t authkey_len, uint8_t *new_authkey,
+                                   size_t new_authkey_len, uint8_t *retries) {
   APDU apdu;
   uint8_t *ptr = apdu.st.data;
   unsigned char data[261];
   unsigned long recv_len = sizeof(data);
   int sw;
 
-  if (state == NULL || authkey == NULL || authkey_len != YKYH_KEY_LEN ||
-      new_authkey == NULL || new_authkey_len != YKYH_KEY_LEN) {
-    return YKYHR_INVALID_PARAMS;
+  if (state == NULL || authkey == NULL || authkey_len != YKHSMAUTH_PW_LEN ||
+      new_authkey == NULL || new_authkey_len != YKHSMAUTH_PW_LEN) {
+    return YKHSMAUTHR_INVALID_PARAMS;
   }
 
   memset(apdu.raw, 0, sizeof(apdu));
-  apdu.st.ins = YKYH_INS_PUT_AUTHKEY;
+  apdu.st.ins = YKHSMAUTH_INS_PUT_AUTHKEY;
 
-  *(ptr++) = YKYH_TAG_AUTHKEY;
+  *(ptr++) = YKHSMAUTH_TAG_AUTHKEY;
   apdu.st.lc++;
   *(ptr++) = 16;
   apdu.st.lc++;
@@ -676,7 +719,7 @@ ykyh_rc ykyh_put_authkey(ykyh_state *state, uint8_t *authkey,
   ptr += 16;
   apdu.st.lc += 16;
 
-  *(ptr++) = YKYH_TAG_AUTHKEY;
+  *(ptr++) = YKHSMAUTH_TAG_AUTHKEY;
   apdu.st.lc++;
   *(ptr++) = 16;
   apdu.st.lc++;
@@ -684,8 +727,8 @@ ykyh_rc ykyh_put_authkey(ykyh_state *state, uint8_t *authkey,
   ptr += 16;
   apdu.st.lc += 16;
 
-  ykyh_rc rc = send_data(state, &apdu, data, &recv_len, &sw);
-  if (rc != YKYHR_SUCCESS) {
+  ykhsmauth_rc rc = send_data(state, &apdu, data, &recv_len, &sw);
+  if (rc != YKHSMAUTHR_SUCCESS) {
     return rc;
   } else if (sw != SW_SUCCESS) {
     if (state->verbose) {
@@ -695,5 +738,5 @@ ykyh_rc ykyh_put_authkey(ykyh_state *state, uint8_t *authkey,
     return translate_error(sw, retries);
   }
 
-  return YKYHR_SUCCESS;
+  return YKHSMAUTHR_SUCCESS;
 }
