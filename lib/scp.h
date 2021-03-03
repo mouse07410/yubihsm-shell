@@ -59,7 +59,7 @@ union _Msg {
     uint16_t len;
     uint8_t data[SCP_MSG_BUF_SIZE];
   } st;
-  uint8_t raw[3 + SCP_MSG_BUF_SIZE];
+  uint8_t raw[SCP_MSG_BUF_SIZE + 3];
 };
 #pragma pack(pop)
 

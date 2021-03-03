@@ -30,6 +30,7 @@
 #include "util.h"
 #include "parsing.h"
 #include "commands.h"
+#include "insecure_memzero.h"
 
 #include <openssl/evp.h>
 
@@ -89,7 +90,11 @@ History *g_hist;
   }
 
 static bool calling_device = false;
+#ifdef YKHSMAUTH_ENABLED
 static yubihsm_context ctx = {0, 0, 0, {0}, 0, 0, 0, 0};
+#else
+static yubihsm_context ctx = {0, 0, 0, {0}, 0, 0, 0};
+#endif
 
 int yh_com_help(yubihsm_context *ctx, Argument *argv, cmd_format in_fmt,
                 cmd_format fmt);
@@ -511,6 +516,14 @@ void create_command_list(CommandList *c) {
                                     fmt_nofmt,
                                     "Open a session with a device using a "
                                     "specific Asymmetric Authentication Key",
+                                    NULL, NULL});
+#endif
+#ifdef YKHSMAUTH_ENABLED
+  register_subcommand(*c, (Command){"ykopen", yh_com_open_yksession,
+                                    "w:authkey,s:label,i:password=-",
+                                    fmt_password, fmt_nofmt,
+                                    "Open a session with a device using an "
+                                    "Authentication in a YubiKey",
                                     NULL, NULL});
 #endif
   *c = register_command(*c, (Command){"sign", yh_com_noop, NULL, fmt_nofmt,
@@ -1951,6 +1964,7 @@ int main(int argc, char *argv[]) {
     goto main_exit;
   }
 
+#ifdef YKHSMAUTH_ENABLED
   ykhsmauth_rc ykhsmauthrc;
   ykhsmauthrc =
     ykhsmauth_init(&ctx.state, 1); // TODO(adma): do something about verbosity
@@ -1959,6 +1973,7 @@ int main(int argc, char *argv[]) {
     rc = EXIT_FAILURE;
     goto main_exit;
   }
+#endif
 
   if (ctx.connector_list[0] == NULL) {
     fprintf(stderr, "Using default connector URL: %s\n", LOCAL_CONNECTOR_URL);
@@ -2021,18 +2036,31 @@ int main(int argc, char *argv[]) {
     Argument arg[7];
 
     if (requires_session == true) {
+      size_t pw_len = sizeof(buf);
       arg[0].w = args_info.authkey_arg;
-      arg[1].x = buf;
-      arg[1].len = sizeof(buf);
       if (get_input_data(args_info.password_given ? args_info.password_arg
                                                   : "-",
-                         arg[1].x, &arg[1].len, fmt_password) == false) {
+                         buf, &pw_len, fmt_password) == false) {
         fprintf(stderr, "Failed to get password\n");
         rc = EXIT_FAILURE;
         goto main_exit;
       }
-
-      comrc = yh_com_open_session(&ctx, arg, fmt_nofmt, fmt_nofmt);
+#ifdef YKHSMAUTH_ENABLED
+      if (args_info.ykhsmauth_label_given) {
+        arg[1].s = args_info.ykhsmauth_label_arg;
+        arg[1].len = strlen(args_info.ykhsmauth_label_arg);
+        arg[2].x = buf;
+        arg[2].len = pw_len;
+        comrc = yh_com_open_yksession(&ctx, arg, fmt_nofmt, fmt_nofmt);
+      } else {
+#endif
+        arg[1].x = buf;
+        arg[1].len = pw_len;
+        comrc = yh_com_open_session(&ctx, arg, fmt_nofmt, fmt_nofmt);
+#ifdef YKHSMAUTH_ENABLED
+      }
+#endif
+      insecure_memzero(buf, pw_len);
       if (comrc != 0) {
         fprintf(stderr, "Failed to open session\n");
         rc = EXIT_FAILURE;
@@ -2164,12 +2192,12 @@ int main(int argc, char *argv[]) {
             yh_string_to_capabilities(args_info.capabilities_arg, &arg[4].c);
           LIB_SUCCEED_OR_DIE(yrc, "Unable to parse capabilities: ");
 
-          yrc = yh_string_to_algo(args_info.algorithm_arg, &arg[5].a);
-          LIB_SUCCEED_OR_DIE(yrc, "Unable to parse algorithm: ");
-
-          memset(&arg[6].c, 0, sizeof(yh_capabilities));
-          yrc = yh_string_to_capabilities(args_info.delegated_arg, &arg[6].c);
+          memset(&arg[5].c, 0, sizeof(yh_capabilities));
+          yrc = yh_string_to_capabilities(args_info.delegated_arg, &arg[5].c);
           LIB_SUCCEED_OR_DIE(yrc, "Unable to parse capabilities: ");
+
+          yrc = yh_string_to_algo(args_info.algorithm_arg, &arg[6].a);
+          LIB_SUCCEED_OR_DIE(yrc, "Unable to parse algorithm: ");
 
           comrc = yh_com_generate_wrap(&ctx, arg, fmt_nofmt, fmt_nofmt);
           COM_SUCCEED_OR_DIE(comrc, "Unable to generate wrap key");
@@ -2865,9 +2893,10 @@ main_exit:
   }
 
   yh_exit();
-
+#ifdef YKHSMAUTH_ENABLED
   ykhsmauth_done(ctx.state);
   ctx.state = NULL;
+#endif
 
 #ifdef USE_ASYMMETRIC_AUTH
   free_configured_pubkeys(&ctx);

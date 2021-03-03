@@ -102,7 +102,6 @@ set (VERSION "${yubihsm_shell_VERSION_MAJOR}.${yubihsm_shell_VERSION_MINOR}.${yu
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/opt/local/lib/pkgconfig:/opt/local/lib/pkgconfig:/usr/local/opt/pcsc-lite/lib/pkgconfig")
   #set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/openssl/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
-  #set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/pcsc-lite/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
   #set(ENV{PKG_CONFIG_PATH} "/usr/local/opt/libedit/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 elseif (${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(ENV{PKG_CONFIG_PATH} "/usr/libdata/pkgconfig:$ENV{PKG_CONFIG_PATH}")
@@ -200,6 +199,12 @@ endif()
 
 message("LIBCRYPTO_VERSION: ${LIBCRYPTO_VERSION}")
 
+# If enabled, make sure to make the 'ykhsmauth-label' option in src/cmdline.ggo visible again
+option(ENABLE_YKHSM_AUTH "Enable/disable ykhsmauth module" OFF)
+if(ENABLE_YKHSM_AUTH)
+  add_definitions(-DYKHSMAUTH_ENABLED="1")
+endif()
+
 add_subdirectory (lib)
 
 if(NOT BUILD_ONLY_LIB)
@@ -215,13 +220,14 @@ if(NOT BUILD_ONLY_LIB)
     set(LIBPCSC_LDFLAGS "-Wl,-framework -Wl,PCSC")
   endif()
 
-  add_subdirectory (ykhsmauth)
+  if(ENABLE_YKHSM_AUTH)
+    add_subdirectory (ykhsmauth)
+    add_subdirectory (yubihsm-auth)
+  endif()
 
   add_subdirectory (src)
 
   add_subdirectory (examples)
-
-  add_subdirectory (yubihsm-auth)
 
   add_subdirectory(yhwrap)
 endif()
